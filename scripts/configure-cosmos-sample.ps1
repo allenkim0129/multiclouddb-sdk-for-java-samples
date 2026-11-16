@@ -36,7 +36,12 @@ if ($Load) {
     if (-not (Test-Path -LiteralPath $configPath -PathType Leaf)) {
         throw 'No saved config. Run this script without -Load first.'
     }
-    $settings = Get-Content -LiteralPath $configPath -Raw | ConvertFrom-Json
+    try {
+        $settings = Get-Content -LiteralPath $configPath -Raw | ConvertFrom-Json
+    } catch {
+        # Parser errors can include the source JSON, which now contains a secret.
+        throw 'Cannot read local Cosmos config. Check file access and JSON syntax locally; do not share its contents.'
+    }
     Assert-Settings $settings
 } else {
     Write-Host 'Use an existing test container with partition key /partitionKey.'
@@ -54,17 +59,34 @@ if ($Load) {
     }
 }
 
-Write-Host 'Enter the primary key, not the connection string. Paste with right-click or Shift+Insert.'
-$secureKey = Read-Host 'Cosmos PRIMARY KEY (hidden; never saved)' -AsSecureString
+$secureKey = $null
 $primaryKey = $null
 try {
-    $primaryKey = [System.Net.NetworkCredential]::new('', $secureKey).Password
+    $saveConfig = -not $Load
+    if ($Load -and $null -ne $settings.PSObject.Properties['primaryKey']) {
+        if ($settings.primaryKey -isnot [string]) {
+            throw 'Invalid primaryKey in local config. Run setup without -Load to replace it.'
+        }
+        $primaryKey = $settings.primaryKey
+    } else {
+        Write-Warning 'The primary key will be saved as plaintext in gitignored .local/cosmos-sample.json. Do not share or force-add this file.'
+        Write-Host 'Enter the primary key, not the connection string. Paste with right-click or Shift+Insert.'
+        $secureKey = Read-Host 'Cosmos PRIMARY KEY (hidden)' -AsSecureString
+        $primaryKey = [System.Net.NetworkCredential]::new('', $secureKey).Password
+        $saveConfig = $true
+    }
     if ([string]::IsNullOrWhiteSpace($primaryKey)) {
         throw 'Primary key is required; saved config and environment were not changed.'
     }
-    if (-not $Load) {
+    if ($saveConfig) {
         New-Item -ItemType Directory -Force (Split-Path -Parent $configPath) | Out-Null
-        $settings | ConvertTo-Json | Set-Content -LiteralPath $configPath -Encoding UTF8
+        [ordered]@{
+            endpoint = $settings.endpoint
+            database = $settings.database
+            collection = $settings.collection
+            runPrefix = $settings.runPrefix
+            primaryKey = $primaryKey
+        } | ConvertTo-Json | Set-Content -LiteralPath $configPath -Encoding UTF8
     }
     $env:MCDB_COSMOS_ENDPOINT = $settings.endpoint
     $env:MCDB_DATABASE = $settings.database
@@ -78,9 +100,10 @@ try {
     }
 }
 
-Write-Host 'Config ready: .local/cosmos-sample.json (gitignored; no credentials).'
+Write-Host "Config ready: $configPath (gitignored; contains plaintext primary key)."
 Write-Host 'Variables are set for this terminal only. In a new terminal, run this script with -Load.'
 Write-Host 'Primary-key authentication is ready; az login is not needed.'
 Write-Host 'The key remains in this terminal environment until cleared or the terminal closes.'
 Write-Host 'After testing: Remove-Item Env:MCDB_COSMOS_KEY -ErrorAction SilentlyContinue'
+Write-Host 'Clearing the environment does not remove the key from the saved file.'
 Write-Host 'No cloud connection or test was started. Run the sample separately with live cosmos --allow-live.'

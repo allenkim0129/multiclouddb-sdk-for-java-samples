@@ -182,20 +182,30 @@ To configure the target interactively, run in your current PowerShell terminal:
 ```
 
 It asks for endpoint, database, container, and a **hidden primary key**, with no
-authentication selection menu. Only the target values plus the `pojo-test` run
-prefix are saved in gitignored `.local/cosmos-sample.json`; the key is never saved
-to that file. Paste using right-click or Shift+Insert if Ctrl+V does not work.
+authentication selection menu. These values, including the **plaintext primary
+key**, plus the `pojo-test` run prefix are saved in `.local/cosmos-sample.json`
+under the repository root. The script prints the full file path, not its contents.
+The `.local/` directory is gitignored and outside all Maven resources, so normal
+Git adds/commits and the built JAR exclude it. Gitignore is not encryption or an
+absolute guarantee: never force-add, upload, share, or paste this file. Protect
+access to your local checkout and any backups.
+Paste using right-click or Shift+Insert if Ctrl+V does not work.
 Use the primary key, not the connection string. Empty keys are rejected.
 The script sets the required environment variables, including `MCDB_COSMOS_KEY`,
 for the current terminal. That environment contains the plaintext key until you
 clear it or close the terminal; it is not a persistent secret store.
 It does not rebuild the JAR, provision resources, or run tests.
 Existing saved config is replaced only after typing `YES`.
-In a new terminal, reload the saved target values and enter the key again:
+In a new terminal, reload the saved target values **and key** without prompts:
 
 ```powershell
 .\scripts\configure-cosmos-sample.ps1 -Load
 ```
+
+For an older saved config without `primaryKey`, `-Load` asks for the key once and
+saves it alongside the existing targets. Run without `-Load` to replace settings
+or rotate the saved key. Clearing `MCDB_COSMOS_KEY` or closing the terminal does
+not erase the key on disk; delete the local config if you no longer want it saved.
 
 Run the script directly as above, not in a separate `pwsh -File` process, so the
 environment remains available to the following `java` command. The Java sample
@@ -218,7 +228,7 @@ $result
 
 To run again after clearing the key, use the setup script with `-Load` first.
 The underlying Java SDK credential-chain fallback is unchanged; this setup script
-always asks for a primary key and does not silently select that fallback.
+requires a saved or newly entered primary key and does not silently select that fallback.
 
 ## DynamoDB live (PowerShell)
 
