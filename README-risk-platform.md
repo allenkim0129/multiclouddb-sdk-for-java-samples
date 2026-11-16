@@ -1,5 +1,11 @@
 # Multicloud DB SDK — Multi-Tenant Risk Analysis Platform
 
+> **Serialization PR migration:** use the pinned build and
+> [customer-scenario smoke guide](README-serialization.md#existing-apps-migration-smoke-and-review-status).
+> Legacy snippets below target the published SDK. With the PR SDK, omit
+> `multiclouddb.connection.connectionMode` (now rejected); shipped examples already
+> omit it. The PR profile packages UI assets but not account configuration files.
+
 A professional-grade sample application built on the Multicloud DB SDK, demonstrating
 **database-per-tenant isolation** across Azure Cosmos DB and Amazon DynamoDB.
 Inspired by enterprise risk platforms serving capital markets, investment banks,

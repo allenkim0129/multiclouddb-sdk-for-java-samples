@@ -58,6 +58,7 @@
         <!-- 4.81.0+ is required for the change feed "All Versions and Deletes" pull model. -->
         <azure-cosmos.version>4.81.0</azure-cosmos.version>
         <aws-sdk.version>2.34.0</aws-sdk.version>
+        <sdk.serialization.sources>src/sdk-released/java</sdk.serialization.sources>
     </properties>
 
     <dependencies>
@@ -142,8 +143,101 @@
 
     </dependencies>
 
+    <profiles>
+        <profile>
+            <id>serialization-pr</id>
+            <properties>
+                <multiclouddb-api.version>0.1.0-beta.2-SNAPSHOT</multiclouddb-api.version>
+                <multiclouddb-provider-cosmos.version>0.1.0-beta.2-SNAPSHOT</multiclouddb-provider-cosmos.version>
+                <multiclouddb-provider-dynamo.version>0.1.0-beta.2-SNAPSHOT</multiclouddb-provider-dynamo.version>
+                <multiclouddb-provider-spanner.version>0.1.0-beta.1-SNAPSHOT</multiclouddb-provider-spanner.version>
+                <azure-cosmos.version>4.82.0</azure-cosmos.version>
+                <jackson.version>2.18.9</jackson.version>
+                <sdk.serialization.sources>src/serialization/java</sdk.serialization.sources>
+            </properties>
+            <dependencyManagement>
+                <dependencies>
+                    <dependency>
+                        <groupId>com.fasterxml.jackson</groupId>
+                        <artifactId>jackson-bom</artifactId>
+                        <version>${jackson.version}</version>
+                        <type>pom</type>
+                        <scope>import</scope>
+                    </dependency>
+                </dependencies>
+            </dependencyManagement>
+            <dependencies>
+                <dependency>
+                    <groupId>com.fasterxml.jackson.datatype</groupId>
+                    <artifactId>jackson-datatype-jsr310</artifactId>
+                    <version>${jackson.version}</version>
+                </dependency>
+                <dependency>
+                    <groupId>com.google.code.gson</groupId>
+                    <artifactId>gson</artifactId>
+                    <version>2.15.0</version>
+                </dependency>
+                <dependency>
+                    <groupId>org.junit.jupiter</groupId>
+                    <artifactId>junit-jupiter</artifactId>
+                    <version>5.10.2</version>
+                    <scope>test</scope>
+                </dependency>
+            </dependencies>
+            <build>
+                <!-- Never package the existing samples' local credential configs. -->
+                <resources>
+                    <resource>
+                        <directory>src/serialization/resources</directory>
+                    </resource>
+                    <resource>
+                        <directory>src/main/resources</directory>
+                        <includes><include>static/**</include></includes>
+                    </resource>
+                </resources>
+                <plugins>
+                    <plugin>
+                        <groupId>org.codehaus.mojo</groupId>
+                        <artifactId>build-helper-maven-plugin</artifactId>
+                        <version>3.6.1</version>
+                        <executions>
+                            <execution>
+                                <id>serialization-tests</id>
+                                <phase>generate-test-sources</phase>
+                                <goals><goal>add-test-source</goal></goals>
+                                <configuration>
+                                    <sources><source>src/serialization-test/java</source></sources>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-surefire-plugin</artifactId>
+                        <version>3.2.5</version>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+    </profiles>
+
     <build>
         <plugins>
+            <plugin>
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>build-helper-maven-plugin</artifactId>
+                <version>3.6.1</version>
+                <executions>
+                    <execution>
+                        <id>sdk-serialization-sources</id>
+                        <phase>generate-sources</phase>
+                        <goals><goal>add-source</goal></goals>
+                        <configuration>
+                            <sources><source>${sdk.serialization.sources}</source></sources>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-compiler-plugin</artifactId>

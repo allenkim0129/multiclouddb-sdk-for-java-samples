@@ -15,9 +15,9 @@ import java.util.Map;
 /**
  * Domain model builders for the multi-tenant risk analysis platform.
  * <p>
- * All models are stored as {@link JsonNode} documents — the Multicloud DB SDK's
- * portable document format. Builder methods produce pre-structured documents
- * ready for {@code client.upsert()}.
+ * Builders return application-owned {@link JsonNode} documents. TenantManager
+ * converts them to neutral Maps before calling the SDK and converts returned Maps
+ * back to JSON for the existing HTTP/UI contract.
  */
 public final class Models {
 

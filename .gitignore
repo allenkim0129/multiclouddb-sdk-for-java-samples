@@ -30,3 +30,6 @@ dependency-reduced-pom.xml
 
 # Change-feed cursor persistence (generated at runtime by ExtendedRetentionSample)
 retention_cursors.json
+
+# Session-local pinned SDK, isolated Maven repository, and build evidence.
+.local/

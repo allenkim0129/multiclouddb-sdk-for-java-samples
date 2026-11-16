@@ -1,5 +1,12 @@
 # Multicloud DB SDK — Change Feed Samples
 
+> **Serialization PR migration:** use the pinned build and
+> [cursor/feed smoke guide](README-serialization.md#existing-apps-migration-smoke-and-review-status).
+> Legacy snippets below target the published SDK. With the PR SDK, omit
+> `multiclouddb.connection.connectionMode` (now rejected); shipped examples already
+> omit it. Cursor serialization callbacks are application-owned, and offline cursor
+> checks do not prove native feed delivery or retention behavior.
+
 Command-line samples that demonstrate the Multicloud DB SDK's **pull-mode
 change feed** on Azure Cosmos DB and Amazon DynamoDB.
 

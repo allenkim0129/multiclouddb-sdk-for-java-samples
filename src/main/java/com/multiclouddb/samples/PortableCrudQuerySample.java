@@ -13,7 +13,6 @@ import com.multiclouddb.api.ProviderId;
 import com.multiclouddb.api.QueryPage;
 import com.multiclouddb.api.QueryRequest;
 import com.multiclouddb.api.ResourceAddress;
-import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import java.util.Map;
@@ -79,7 +78,8 @@ public class PortableCrudQuerySample {
             MulticloudDbKey getKey = MulticloudDbKey.of("sample-1", "sample-1");
             DocumentResult readResult = client.read(address, getKey);
             if (readResult != null) {
-                System.out.println("  Retrieved: " + readResult.document().toPrettyString());
+                System.out.println("  Retrieved: " + MAPPER.writerWithDefaultPrettyPrinter()
+                        .writeValueAsString(readResult.document()));
             }
             System.out.println();
 

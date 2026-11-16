@@ -70,7 +70,7 @@ public class RiskPlatformApp {
 
     // ── HTTP Server ─────────────────────────────────────────────────────────
 
-    public void startServer(int port) throws IOException {
+    public HttpServer startServer(int port) throws IOException {
         HttpServer server = HttpServer.create(new InetSocketAddress(port), 0);
 
         // REST API endpoints
@@ -109,6 +109,7 @@ public class RiskPlatformApp {
         System.out.println();
         System.out.println("  Press Ctrl+C to stop.");
         System.out.println();
+        return server;
     }
 
     /** Left-aligns {@code s} in a field of exactly {@code width} chars, truncating if too long. */

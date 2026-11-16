@@ -25,8 +25,7 @@ multiclouddb.provider=cosmos
 # Run: az cosmosdb show --name <account> --resource-group <rg> --query documentEndpoint -o tsv
 multiclouddb.connection.endpoint=https://<YOUR-COSMOS-ACCOUNT-NAME>.documents.azure.com:443/
 
-# Use "gateway" for restricted networks / firewalls; "direct" for best performance
-multiclouddb.connection.connectionMode=gateway
+# The PR SDK selects Gateway/HTTP2 itself and rejects connectionMode.
 
 # ---------------------------------------------------------------------------
 # OPTION A — Master Key auth  (comment out if using Option B)

@@ -6,6 +6,7 @@ package com.multiclouddb.samples.changefeed;
 import com.multiclouddb.samples.ConfigLoader;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.multiclouddb.api.Capability;
 import com.multiclouddb.api.CapabilitySet;
 import com.multiclouddb.api.MulticloudDbClient;
@@ -87,6 +88,7 @@ import java.util.concurrent.atomic.AtomicLong;
 public class ChangeFeedWatcherSample {
 
     private static final Logger log = LoggerFactory.getLogger(ChangeFeedWatcherSample.class);
+    private static final ObjectMapper MAPPER = new ObjectMapper();
 
     private static final String DEFAULT_CONFIG = "change-feed-cosmos.properties";
     private static final String DEFAULT_DATABASE = "multiclouddb-sdk-for-java-changefeed";
@@ -154,7 +156,7 @@ public class ChangeFeedWatcherSample {
             List<ChangeFeedCursor> cursors = new ArrayList<>(client.listCursors(address));
             log.info("Discovered {} partition cursor(s) at the live tip.", cursors.size());
             for (int i = 0; i < cursors.size(); i++) {
-                String token = cursors.get(i).toToken();
+                String token = CursorSerialization.toToken(cursors.get(i));
                 log.info("  cursor-{}: {}…", i, token.substring(0, Math.min(80, token.length())));
             }
             if (cursors.isEmpty()) {
@@ -274,18 +276,22 @@ public class ChangeFeedWatcherSample {
     }
 
     private static void printEvent(ChangeEvent ev, int cursorIndex) {
+        log.info("{}", formatEvent(ev, cursorIndex));
+    }
+
+    static String formatEvent(ChangeEvent ev, int cursorIndex) {
         StringBuilder sb = new StringBuilder()
                 .append('[').append(TS.format(ev.commitTimestamp())).append("] ")
                 .append("cursor-").append(cursorIndex).append("  ")
                 .append(String.format("%-6s ", ev.type()))
                 .append(ev.key());
-        JsonNode doc = ev.data();
+        JsonNode doc = MAPPER.valueToTree(ev.data());
         if (doc != null && !doc.isMissingNode() && !doc.isNull()) {
             // Compact one-line payload preview; trim very long docs.
             String json = doc.toString();
             if (json.length() > 400) json = json.substring(0, 400) + "…";
             sb.append("  ").append(json);
         }
-        log.info("{}", sb);
+        return sb.toString();
     }
 }

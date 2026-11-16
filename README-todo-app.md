@@ -1,5 +1,11 @@
 # Multicloud DB SDK — TODO Sample Application
 
+> **Serialization PR migration:** use the pinned build and
+> [offline/native smoke guide](README-serialization.md#existing-apps-migration-smoke-and-review-status).
+> Legacy snippets below target the published SDK. With the PR SDK, omit
+> `multiclouddb.connection.connectionMode` (now rejected); shipped examples already
+> omit it. The PR profile packages UI assets but not account configuration files.
+
 A simple CRUD **web application** that demonstrates the Multicloud DB SDK's
 provider-portable API. The same Java code runs against **Azure Cosmos DB**,
 **Amazon DynamoDB**, or **Google Cloud Spanner** — switch providers by changing

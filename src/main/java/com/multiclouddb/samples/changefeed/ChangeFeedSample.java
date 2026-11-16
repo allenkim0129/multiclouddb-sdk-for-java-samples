@@ -155,7 +155,7 @@ public class ChangeFeedSample {
             List<ChangeFeedCursor> cursors = client.listCursors(address);
             log.info("  Discovered {} partition cursor(s)", cursors.size());
             for (int i = 0; i < cursors.size(); i++) {
-                String token = cursors.get(i).toToken();
+                String token = CursorSerialization.toToken(cursors.get(i));
                 log.info("  cursor-{}: {}…", i, token.substring(0, Math.min(80, token.length())));
             }
             if (cursors.isEmpty()) {
@@ -185,9 +185,9 @@ public class ChangeFeedSample {
                 log.error("  No partition cursors returned; skipping token round-trip.");
             } else {
                 ChangeFeedCursor liveTip = tipCursors.get(0);
-                String token = liveTip.toToken();
+                String token = CursorSerialization.toToken(liveTip);
                 log.info("  Persisted token (truncated): {}...", token.substring(0, Math.min(60, token.length())));
-                ChangeFeedCursor resumed = ChangeFeedCursor.fromToken(token);
+                ChangeFeedCursor resumed = CursorSerialization.fromToken(token);
                 ChangeFeedPage page = client.readChanges(address, resumed);
                 log.info("  Resumed cursor read {} event(s); hasMore={}, terminal={}",
                         page.events().size(), page.hasMore(), page.isTerminal());

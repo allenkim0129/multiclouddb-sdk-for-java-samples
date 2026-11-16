@@ -1,0 +1,21 @@
+{
+  "orderId": "synthetic-order-large-integer",
+  "runId": "replaced-at-runtime",
+  "revision": 1,
+  "status": "NEW",
+  "customer": {"name": "Synthetic Customer", "address": {"city": "Example City", "postalCode": "00123"}},
+  "items": [
+    {"sku": "SYNTHETIC-A", "quantity": 2, "unitPrice": 50.25, "tags": ["demo", "fragile"]},
+    {"sku": "SYNTHETIC-B", "quantity": 1, "unitPrice": 25.00, "tags": []}
+  ],
+  "labels": {"channel": "sample", "region": "test"},
+  "optionalFields": {"giftMessage": null},
+  "placedAt": "2026-01-02T03:04:05.123456789Z",
+  "deliveryDate": "2026-01-05",
+  "note": null,
+  "sequence": 9007199254740991,
+  "externalNumber": 18446744073709551617,
+  "total": 125.50,
+  "exactSequenceText": "9007199254740991",
+  "exactTotalText": "125.50"
+}

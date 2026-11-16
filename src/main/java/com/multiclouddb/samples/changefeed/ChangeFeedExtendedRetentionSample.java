@@ -69,7 +69,6 @@ import java.util.concurrent.atomic.AtomicInteger;
  *   multiclouddb.provider=cosmos
  *   multiclouddb.connection.endpoint=https://&lt;account&gt;.documents.azure.com:443/
  *   multiclouddb.connection.key=&lt;primary-master-key&gt;
- *   multiclouddb.connection.connectionMode=gateway
  *   multiclouddb.database=multiclouddb-sdk-for-java-changefeed
  *
  *   # Extended retention opt-in:
@@ -361,7 +360,7 @@ public class ChangeFeedExtendedRetentionSample {
         for (int i = 1; i < lines.size(); i++) {
             String token = lines.get(i).trim();
             if (!token.isEmpty()) {
-                savedCursors.add(ChangeFeedCursor.fromToken(token));
+                savedCursors.add(CursorSerialization.fromToken(token));
             }
         }
         System.out.println("  Loaded " + savedCursors.size() + " saved cursor(s)");
@@ -504,7 +503,7 @@ public class ChangeFeedExtendedRetentionSample {
                             Thread.sleep(250);
                         }
                     }
-                    finalTokens[cursorIndex] = cursor.toToken();
+                    finalTokens[cursorIndex] = CursorSerialization.toToken(cursor);
                 } catch (CursorExpiredException ce) {
                     synchronized (threadException) {
                         if (threadException[0] == null) {

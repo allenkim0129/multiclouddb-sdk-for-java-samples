@@ -97,7 +97,7 @@ public class TenantManager {
         ResourceAddress addr = new ResourceAddress(ADMIN_DB, TENANTS_COLLECTION);
         MulticloudDbKey key = MulticloudDbKey.of(tenantId, tenantId);
         DocumentResult result = client.read(addr, key);
-        return result != null ? result.document() : null;
+        return result != null ? MAPPER.valueToTree(result.document()) : null;
     }
 
     // ── Per-tenant resource addressing ──────────────────────────────────────
@@ -142,7 +142,7 @@ public class TenantManager {
      */
     public JsonNode read(String tenantId, String collection, MulticloudDbKey key) {
         DocumentResult result = client.read(addressFor(tenantId, collection), key);
-        return result != null ? result.document() : null;
+        return result != null ? MAPPER.valueToTree(result.document()) : null;
     }
 
     /**

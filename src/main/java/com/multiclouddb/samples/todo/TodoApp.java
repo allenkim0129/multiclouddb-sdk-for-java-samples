@@ -83,7 +83,7 @@ public class TodoApp {
     public JsonNode getTodo(String id) {
         MulticloudDbKey key = MulticloudDbKey.of(id, id);
         DocumentResult result = client.read(address, key);
-        return result != null ? result.document() : null;
+        return result != null ? MAPPER.valueToTree(result.document()) : null;
     }
 
     public JsonNode updateTodo(String id, JsonNode updates) {
@@ -93,7 +93,7 @@ public class TodoApp {
             return null;
         }
 
-        ObjectNode updated = existing.document().deepCopy();
+        ObjectNode updated = MAPPER.valueToTree(existing.document());
         updates.fields().forEachRemaining(field -> updated.set(field.getKey(), field.getValue()));
         updated.put("updatedAt", Instant.now().toString());
         client.upsert(address, key, MAPPER.convertValue(updated, MAP_TYPE));
@@ -138,7 +138,7 @@ public class TodoApp {
 
     // ── HTTP Server ─────────────────────────────────────────────────────────
 
-    public void startServer(int port) throws IOException {
+    public HttpServer startServer(int port) throws IOException {
         HttpServer server = HttpServer.create(new InetSocketAddress(port), 0);
 
         server.createContext("/api/todos", this::handleTodos);
@@ -158,6 +158,7 @@ public class TodoApp {
         System.out.println();
         System.out.println("  Press Ctrl+C to stop.");
         System.out.println();
+        return server;
     }
 
     // ── REST handlers ───────────────────────────────────────────────────────
