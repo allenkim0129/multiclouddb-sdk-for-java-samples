@@ -175,6 +175,27 @@ run; all queries are partition-scoped to that unique run.
 
 ## Cosmos live (PowerShell)
 
+To configure the target interactively, run in your current PowerShell terminal:
+
+```powershell
+.\scripts\configure-cosmos-sample.ps1
+```
+
+It asks for endpoint, database, and container, validates them, and saves only those
+values plus the `pojo-test` run prefix in gitignored `.local/cosmos-sample.json`.
+It also sets the required environment variables for the current terminal.
+It does not store credentials, rebuild the JAR, provision resources, or run tests.
+Existing saved config is replaced only after typing `YES`.
+In a new terminal, reload the saved values without prompts:
+
+```powershell
+.\scripts\configure-cosmos-sample.ps1 -Load
+```
+
+Run the script directly as above, not in a separate `pwsh -File` process, so the
+environment remains available to the following `java` command. The Java sample
+still consumes environment variables; this script is the config-file bridge.
+
 Prefer the SDK's `DefaultAzureCredential`: sign in locally using `az login` with
 the identity granted access to the chosen container (Azure CLI is needed only for
 this authentication option). Managed identity or the Azure environment credential
