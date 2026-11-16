@@ -38,6 +38,10 @@ procedure in [its guide](README-serialization.md), not the published SDK default
 Use `mvn clean` when switching profiles. The profile compiles all existing samples with
 the new Map/cursor API, but packages only synthetic fixtures, static UI assets, and safe logging configuration;
 existing classpath-based app configurations are not included.
+Its primary-key setup script writes
+`src/main/resources/serialization-cosmos-cloud.properties` alongside the existing
+configs, but this gitignored secret file is **read from disk and excluded from
+both builds' JARs**. See [Cosmos setup](README-serialization.md#cosmos-live-powershell).
 
 ---
 

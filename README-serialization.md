@@ -5,6 +5,11 @@ This is customer code for evaluating the **existing** Map-based public API in
 It does not change the SDK, promise a new numeric contract, or implement partial updates.
 Only synthetic orders are used. **No live operation runs by default.**
 
+**App name:** Complex POJO Serialization. **Main class:**
+[`com.multiclouddb.samples.serialization.ComplexPojoSample`](src/serialization/java/com/multiclouddb/samples/serialization/ComplexPojoSample.java).
+The `public static void main(String[] args)` method is in
+`src/serialization/java/com/multiclouddb/samples/serialization/ComplexPojoSample.java`.
+
 ## Team review: start with these five customer files
 
 | Read in order | Review focus |
@@ -12,7 +17,7 @@ Only synthetic orders are used. **No live operation runs by default.**
 | [Order.java](src/serialization/java/com/multiclouddb/samples/serialization/Order.java) | What the application owns: nested POJOs and Java field types |
 | [OrderFixtures.java](src/serialization/java/com/multiclouddb/samples/serialization/OrderFixtures.java) | Visible synthetic inputs; compare with the [independent JSON fixtures](src/serialization/resources/fixtures) |
 | [CustomerSerializers.java](src/serialization/java/com/multiclouddb/samples/serialization/CustomerSerializers.java) | Actual Jackson/Gson settings, POJO -> Map and Map -> POJO conversion |
-| [LiveSettings.java](src/serialization/java/com/multiclouddb/samples/serialization/LiveSettings.java) | Explicit target, auth selection, live opt-in; no credential files |
+| [LiveSettings.java](src/serialization/java/com/multiclouddb/samples/serialization/LiveSettings.java) | External properties loading, primary-key configuration, live opt-in and legacy environment compatibility |
 | [ComplexPojoSample.java](src/serialization/java/com/multiclouddb/samples/serialization/ComplexPojoSample.java) | Actual SDK calls in `exercise`, catches/branching in `demonstrateFailureHandling`, diagnostics getters, comparison and cleanup |
 
 Short walkthrough: run **preview**, follow one original order into `toDocument`,
@@ -161,16 +166,19 @@ network timeouts can add latency/requests; this is not a hard monetary/time budg
 | Cosmos DB for NoSQL | Database + container, partition key path **`/partitionKey`**, normal `id` | Read metadata plus item create/read/replace/upsert/query/delete on the test container; e.g. appropriately scoped Cosmos DB data-plane RBAC |
 | DynamoDB | Physical table **`<MCDB_DATABASE>__<MCDB_COLLECTION>`**, String hash key **`partitionKey`**, String range key **`sortKey`** | `dynamodb:PutItem`, `GetItem`, `Query`, `DeleteItem` on that table; no Scan/CreateTable/DeleteTable needed |
 
-Do not use the other samples' `src/main/resources/*-cloud.properties` mechanism.
-The serialization profile packages only synthetic fixtures, static UI assets and logging config,
-not those credential files. Use environment variables or provider credential chains.
+The POJO sample follows the existing `.properties` naming convention but reads its
+config **from disk**, not from the JAR classpath. Its secret
+`src/main/resources/serialization-cosmos-cloud.properties` file is gitignored
+and explicitly excluded from the default Maven resources; the serialization profile
+includes only fixtures, static UI assets and logging config. Neither profile packages
+this secret file. Other samples' historical classpath-config workflow is unchanged.
 Never paste account keys into source, commands recorded in shell history, chat, logs,
 or a JAR. Provider diagnostic logging is disabled in this profile. Errors print
 operation, exception type and SDK error category, not native messages/causes that
 could expose credentials. Diagnose access errors privately in your cloud tooling.
 
 Required target names are restricted to 1-63 letters/digits/underscores/hyphens;
-`MCDB_RUN_PREFIX` allows 1-32 letters/digits/hyphens. A fresh UUID is appended on every
+`multiclouddb.runPrefix` (or legacy `MCDB_RUN_PREFIX`) allows 1-32 letters/digits/hyphens. A fresh UUID is appended on every
 run; all queries are partition-scoped to that unique run.
 
 ## Cosmos live (PowerShell)
@@ -182,53 +190,82 @@ To configure the target interactively, run in your current PowerShell terminal:
 ```
 
 It asks for endpoint, database, container, and a **hidden primary key**, with no
-authentication selection menu. These values, including the **plaintext primary
-key**, plus the `pojo-test` run prefix are saved in `.local/cosmos-sample.json`
-under the repository root. The script prints the full file path, not its contents.
-The `.local/` directory is gitignored and outside all Maven resources, so normal
-Git adds/commits and the built JAR exclude it. Gitignore is not encryption or an
-absolute guarantee: never force-add, upload, share, or paste this file. Protect
-access to your local checkout and any backups.
+authentication selection menu. It writes:
+
+```text
+src/main/resources/serialization-cosmos-cloud.properties
+```
+
+This sits alongside the other sample configs. The committed
+[`serialization-cosmos-cloud.properties.template`](src/main/resources/serialization-cosmos-cloud.properties.template)
+shows the expected fields; you can also copy and fill it in locally:
+
+```properties
+multiclouddb.provider=cosmos
+multiclouddb.connection.endpoint=https://YOUR-ACCOUNT.documents.azure.com/
+multiclouddb.connection.key=YOUR-PRIMARY-KEY
+multiclouddb.database=YOUR-DATABASE
+multiclouddb.collection=YOUR-CONTAINER
+multiclouddb.runPrefix=pojo-test
+```
+
+The filled file contains a **plaintext primary key**. It is gitignored via
+`*-cloud.properties` and explicitly excluded from the JAR. The script prints
+the full path, not the contents. Gitignore is not encryption or an absolute
+guarantee: never force-add, upload, share, or paste the filled file. Protect access
+to your local checkout and backups. Only the empty template belongs in Git.
 Paste using right-click or Shift+Insert if Ctrl+V does not work.
 Use the primary key, not the connection string. Empty keys are rejected.
-The script sets the required environment variables, including `MCDB_COSMOS_KEY`,
-for the current terminal. That environment contains the plaintext key until you
-clear it or close the terminal; it is not a persistent secret store.
-It does not rebuild the JAR, provision resources, or run tests.
-Existing saved config is replaced only after typing `YES`.
-In a new terminal, reload the saved target values **and key** without prompts:
+The script does **not** export credentials to environment variables, rebuild the
+JAR, provision resources, or run tests. Existing properties are replaced only after
+typing `YES`. Run the Java command below directly in future terminals; there is no
+per-terminal configuration step.
+
+**Already used the earlier JSON setup?** Migrate its values and key once:
 
 ```powershell
 .\scripts\configure-cosmos-sample.ps1 -Load
 ```
 
-For an older saved config without `primaryKey`, `-Load` asks for the key once and
-saves it alongside the existing targets. Run without `-Load` to replace settings
-or rotate the saved key. Clearing `MCDB_COSMOS_KEY` or closing the terminal does
-not erase the key on disk; delete the local config if you no longer want it saved.
+If the properties file already exists, `-Load` leaves it unchanged and reports its
+location; Java validates it before connecting. Otherwise it migrates
+`.local/cosmos-sample.json`. A keyless old JSON prompts for the key once. The old
+JSON is deliberately not deleted and may still contain a secret; remove that
+specific file yourself after checking the new configuration.
 
-Run the script directly as above, not in a separate `pwsh -File` process, so the
-environment remains available to the following `java` command. The Java sample
-still consumes environment variables; this script is the config-file bridge.
-
-The key takes precedence over Azure identity; **`az login` is not needed** for this
-setup. Once the script succeeds, run in the same terminal:
+**Rebuild once after pulling the properties-support code** using the pinned build
+script or the sample-only Maven command above. Later properties edits require
+no rebuild. **`az login` is not needed** for primary-key authentication.
+Run from the repository root:
 
 ```powershell
 $jar = 'target\multiclouddb-samples-1.0.0-SNAPSHOT-jar-with-dependencies.jar'
 $main = 'com.multiclouddb.samples.serialization.ComplexPojoSample'
-try {
-    java -cp $jar $main live cosmos --allow-live
-    $result = $LASTEXITCODE
-} finally {
-    Remove-Item Env:MCDB_COSMOS_KEY -ErrorAction SilentlyContinue
-}
-$result
+java -cp $jar $main live cosmos --allow-live
+$LASTEXITCODE
 ```
 
-To run again after clearing the key, use the setup script with `-Load` first.
-The underlying Java SDK credential-chain fallback is unchanged; this setup script
-requires a saved or newly entered primary key and does not silently select that fallback.
+To choose an explicit file or run from a different directory:
+
+```powershell
+java "-Dmulticlouddb.config=C:\path\to\serialization-cosmos-cloud.properties" `
+    -cp $jar $main live cosmos --allow-live
+```
+
+This property is a **filesystem path** for the POJO sample, unlike the old apps'
+classpath resource name. The file is read as UTF-8 (optional BOM accepted) using
+Java properties escaping rules. The setup script escapes special characters.
+Configuration precedence: explicit `-Dmulticlouddb.config`, then the default
+properties path for Cosmos, then legacy environment settings if no file is selected.
+A selected file supplies **all** target/key values; it never merges stale environment
+credentials. Missing/unreadable/invalid selected files or missing keys fail closed;
+no silent environment/identity fallback. The file workflow supports Cosmos; Dynamo
+continues using its documented environment/credential-chain setup. Preview never
+reads the account config, even when `-Dmulticlouddb.config` is set.
+
+Remove any old `MCDB_COSMOS_KEY` environment value if you used the previous setup:
+`Remove-Item Env:MCDB_COSMOS_KEY -ErrorAction SilentlyContinue`. This does not erase
+the primary key stored in either local config file.
 
 ## DynamoDB live (PowerShell)
 
@@ -470,7 +507,7 @@ in orchestration unit tests use an explicitly labeled in-memory test double:
 **they do not validate native mapping or live storage**. A separate offline cursor
 round-trip checks the directly required migration of existing change-feed samples.
 
-Observed offline results: all six configured preview cases and sixteen JUnit tests
+Observed offline results: all six configured preview cases and twenty-two JUnit tests
 passed on JDK 17; the original released-SDK profile also compiled. The PowerShell
 script was executed end to end using PowerShell on Linux, including the installed/
 resolved artifact hash checks. Native Windows execution has not been performed.

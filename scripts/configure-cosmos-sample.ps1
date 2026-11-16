@@ -7,7 +7,22 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
-$configPath = Join-Path $root '.local/cosmos-sample.json'
+$configPath = Join-Path $root 'src/main/resources/serialization-cosmos-cloud.properties'
+$legacyPath = Join-Path $root '.local/cosmos-sample.json'
+
+function Show-ConfigLocation {
+    Write-Host "Config ready: $configPath (gitignored; contains plaintext primary key)."
+    Write-Host 'The sample reads this file from disk; no environment setup or az login is needed.'
+    Write-Host 'Run from the repository root, or set -Dmulticlouddb.config to the full file path.'
+    Write-Host 'No cloud connection or test was started. Run the sample separately with live cosmos --allow-live.'
+}
+
+function ConvertTo-PropertyValue {
+    param([string]$Value)
+    return $Value.Replace('\', '\\').Replace("`r", '\r').Replace("`n", '\n').
+        Replace("`t", '\t').Replace(' ', '\ ').Replace('=', '\=').
+        Replace(':', '\:').Replace('#', '\#').Replace('!', '\!')
+}
 
 function Assert-Settings {
     param($Settings)
@@ -33,14 +48,19 @@ function Assert-Settings {
 }
 
 if ($Load) {
-    if (-not (Test-Path -LiteralPath $configPath -PathType Leaf)) {
+    if (Test-Path -LiteralPath $configPath -PathType Leaf) {
+        Write-Host 'Using the existing properties file; the Java sample validates it before connecting.'
+        Show-ConfigLocation
+        return
+    }
+    if (-not (Test-Path -LiteralPath $legacyPath -PathType Leaf)) {
         throw 'No saved config. Run this script without -Load first.'
     }
     try {
-        $settings = Get-Content -LiteralPath $configPath -Raw | ConvertFrom-Json
+        $settings = Get-Content -LiteralPath $legacyPath -Raw | ConvertFrom-Json
     } catch {
         # Parser errors can include the source JSON, which now contains a secret.
-        throw 'Cannot read local Cosmos config. Check file access and JSON syntax locally; do not share its contents.'
+        throw 'Cannot read legacy Cosmos JSON config. Check file access and syntax locally; do not share its contents.'
     }
     Assert-Settings $settings
 } else {
@@ -54,7 +74,7 @@ if ($Load) {
     Assert-Settings $settings
     if (Test-Path -LiteralPath $configPath) {
         if ((Read-Host 'Replace saved Cosmos config? Type YES to confirm') -cne 'YES') {
-            throw 'Cancelled; saved config and environment were not changed.'
+            throw 'Cancelled; saved config was not changed.'
         }
     }
 }
@@ -62,37 +82,34 @@ if ($Load) {
 $secureKey = $null
 $primaryKey = $null
 try {
-    $saveConfig = -not $Load
     if ($Load -and $null -ne $settings.PSObject.Properties['primaryKey']) {
         if ($settings.primaryKey -isnot [string]) {
             throw 'Invalid primaryKey in local config. Run setup without -Load to replace it.'
         }
         $primaryKey = $settings.primaryKey
     } else {
-        Write-Warning 'The primary key will be saved as plaintext in gitignored .local/cosmos-sample.json. Do not share or force-add this file.'
+        Write-Warning 'The primary key will be saved as plaintext in gitignored serialization-cosmos-cloud.properties. Do not share or force-add this file.'
         Write-Host 'Enter the primary key, not the connection string. Paste with right-click or Shift+Insert.'
         $secureKey = Read-Host 'Cosmos PRIMARY KEY (hidden)' -AsSecureString
         $primaryKey = [System.Net.NetworkCredential]::new('', $secureKey).Password
-        $saveConfig = $true
     }
     if ([string]::IsNullOrWhiteSpace($primaryKey)) {
-        throw 'Primary key is required; saved config and environment were not changed.'
+        throw 'Primary key is required; saved config was not changed.'
     }
-    if ($saveConfig) {
-        New-Item -ItemType Directory -Force (Split-Path -Parent $configPath) | Out-Null
-        [ordered]@{
-            endpoint = $settings.endpoint
-            database = $settings.database
-            collection = $settings.collection
-            runPrefix = $settings.runPrefix
-            primaryKey = $primaryKey
-        } | ConvertTo-Json | Set-Content -LiteralPath $configPath -Encoding UTF8
+    $values = [ordered]@{
+        'multiclouddb.provider' = 'cosmos'
+        'multiclouddb.connection.endpoint' = $settings.endpoint
+        'multiclouddb.connection.key' = $primaryKey
+        'multiclouddb.database' = $settings.database
+        'multiclouddb.collection' = $settings.collection
+        'multiclouddb.runPrefix' = $settings.runPrefix
     }
-    $env:MCDB_COSMOS_ENDPOINT = $settings.endpoint
-    $env:MCDB_DATABASE = $settings.database
-    $env:MCDB_COLLECTION = $settings.collection
-    $env:MCDB_RUN_PREFIX = $settings.runPrefix
-    $env:MCDB_COSMOS_KEY = $primaryKey
+    $lines = @('# Local secret config: gitignored, loaded from disk, never package or share.')
+    foreach ($name in $values.Keys) {
+        $lines += $name + '=' + (ConvertTo-PropertyValue $values[$name])
+    }
+    New-Item -ItemType Directory -Force (Split-Path -Parent $configPath) | Out-Null
+    [System.IO.File]::WriteAllLines($configPath, [string[]]$lines, [System.Text.UTF8Encoding]::new($false))
 } finally {
     $primaryKey = $null
     if ($null -ne $secureKey) {
@@ -100,10 +117,7 @@ try {
     }
 }
 
-Write-Host "Config ready: $configPath (gitignored; contains plaintext primary key)."
-Write-Host 'Variables are set for this terminal only. In a new terminal, run this script with -Load.'
-Write-Host 'Primary-key authentication is ready; az login is not needed.'
-Write-Host 'The key remains in this terminal environment until cleared or the terminal closes.'
-Write-Host 'After testing: Remove-Item Env:MCDB_COSMOS_KEY -ErrorAction SilentlyContinue'
-Write-Host 'Clearing the environment does not remove the key from the saved file.'
-Write-Host 'No cloud connection or test was started. Run the sample separately with live cosmos --allow-live.'
+if ($Load) {
+    Write-Host 'Migrated the legacy JSON settings. The old .local/cosmos-sample.json was not deleted and still contains any saved key.'
+}
+Show-ConfigLocation

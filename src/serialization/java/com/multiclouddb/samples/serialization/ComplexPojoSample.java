@@ -54,7 +54,8 @@ public final class ComplexPojoSample {
         LiveSettings settings;
         try {
             preview = LiveSettings.preview(args);
-            settings = preview ? null : LiveSettings.load(args, System.getenv());
+            settings = preview ? null : LiveSettings.load(args, System.getenv(),
+                    System.getProperty("multiclouddb.config"));
         } catch (IllegalArgumentException invalid) {
             // These validation messages contain variable names, never supplied values or native errors.
             System.err.println("FAIL configuration: " + invalid.getMessage());

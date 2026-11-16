@@ -186,7 +186,7 @@
             </dependencies>
             <build>
                 <!-- Never package the existing samples' local credential configs. -->
-                <resources>
+                <resources combine.self="override">
                     <resource>
                         <directory>src/serialization/resources</directory>
                     </resource>
@@ -222,6 +222,14 @@
     </profiles>
 
     <build>
+        <resources>
+            <resource>
+                <directory>src/main/resources</directory>
+                <excludes>
+                    <exclude>serialization-cosmos-cloud.properties</exclude>
+                </excludes>
+            </resource>
+        </resources>
         <plugins>
             <plugin>
                 <groupId>org.codehaus.mojo</groupId>

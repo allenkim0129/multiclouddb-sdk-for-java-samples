@@ -7,11 +7,19 @@ import com.multiclouddb.api.ProviderId;
 import com.multiclouddb.api.ResourceAddress;
 
 import java.net.URI;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.Map;
+import java.util.Properties;
 
 record LiveSettings(ProviderId provider, ResourceAddress address,
                     MulticloudDbClientConfig config, String prefix) {
+    static final Path DEFAULT_COSMOS_CONFIG =
+            Path.of("src/main/resources/serialization-cosmos-cloud.properties");
+
     static boolean preview(String[] args) {
         if (args.length == 0 || Arrays.equals(args, new String[]{"preview"})) {
             return true;
@@ -63,6 +71,60 @@ record LiveSettings(ProviderId provider, ResourceAddress address,
             config.connection("region", region);
         }
         return new LiveSettings(provider, new ResourceAddress(database, collection), config.build(), prefix);
+    }
+
+    static LiveSettings load(String[] args, Map<String, String> env, String configFile) {
+        if (preview(args)) {
+            throw new IllegalArgumentException("Preview must not load account configuration");
+        }
+        if (configFile != null) {
+            if (configFile.isBlank()) {
+                throw new IllegalArgumentException("multiclouddb.config must be a non-empty filesystem path");
+            }
+            return fromProperties(args, Path.of(configFile));
+        }
+        if (args[1].equals("cosmos") && Files.exists(DEFAULT_COSMOS_CONFIG)) {
+            return fromProperties(args, DEFAULT_COSMOS_CONFIG);
+        }
+        return load(args, env);
+    }
+
+    private static LiveSettings fromProperties(String[] args, Path path) {
+        if (!args[1].equals("cosmos")) {
+            throw new IllegalArgumentException("The file-based sample configuration supports live cosmos only");
+        }
+        Properties properties = new Properties();
+        try (var reader = Files.newBufferedReader(path, StandardCharsets.UTF_8)) {
+            // Accept both BOM-free UTF-8 and files saved by Windows PowerShell editors.
+            reader.mark(1);
+            if (reader.read() != '\uFEFF') {
+                reader.reset();
+            }
+            properties.load(reader);
+        } catch (IOException | IllegalArgumentException failure) {
+            // Do not attach parser exceptions: malformed input may contain the primary key.
+            throw new IllegalArgumentException(
+                    "Cannot read Cosmos properties file; check its path, access and syntax locally");
+        }
+        if (!"cosmos".equals(property(properties, "multiclouddb.provider"))) {
+            throw new IllegalArgumentException("multiclouddb.provider must be cosmos for this configuration");
+        }
+        Map<String, String> values = Map.of(
+                "MCDB_DATABASE", property(properties, "multiclouddb.database"),
+                "MCDB_COLLECTION", property(properties, "multiclouddb.collection"),
+                "MCDB_RUN_PREFIX", property(properties, "multiclouddb.runPrefix"),
+                "MCDB_COSMOS_ENDPOINT", property(properties, "multiclouddb.connection.endpoint"),
+                "MCDB_COSMOS_KEY", property(properties, "multiclouddb.connection.key"));
+        // A selected file is authoritative; never combine it with stale environment credentials/targets.
+        return load(args, values);
+    }
+
+    private static String property(Properties properties, String name) {
+        String value = properties.getProperty(name);
+        if (value == null || value.isBlank()) {
+            throw new IllegalArgumentException("Missing required property: " + name);
+        }
+        return value;
     }
 
     private static String identifier(Map<String, String> env, String name) {
