@@ -181,12 +181,17 @@ To configure the target interactively, run in your current PowerShell terminal:
 .\scripts\configure-cosmos-sample.ps1
 ```
 
-It asks for endpoint, database, and container, validates them, and saves only those
-values plus the `pojo-test` run prefix in gitignored `.local/cosmos-sample.json`.
-It also sets the required environment variables for the current terminal.
-It does not store credentials, rebuild the JAR, provision resources, or run tests.
+It asks for endpoint, database, container, and a **hidden primary key**, with no
+authentication selection menu. Only the target values plus the `pojo-test` run
+prefix are saved in gitignored `.local/cosmos-sample.json`; the key is never saved
+to that file. Paste using right-click or Shift+Insert if Ctrl+V does not work.
+Use the primary key, not the connection string. Empty keys are rejected.
+The script sets the required environment variables, including `MCDB_COSMOS_KEY`,
+for the current terminal. That environment contains the plaintext key until you
+clear it or close the terminal; it is not a persistent secret store.
+It does not rebuild the JAR, provision resources, or run tests.
 Existing saved config is replaced only after typing `YES`.
-In a new terminal, reload the saved values without prompts:
+In a new terminal, reload the saved target values and enter the key again:
 
 ```powershell
 .\scripts\configure-cosmos-sample.ps1 -Load
@@ -196,25 +201,24 @@ Run the script directly as above, not in a separate `pwsh -File` process, so the
 environment remains available to the following `java` command. The Java sample
 still consumes environment variables; this script is the config-file bridge.
 
-Prefer the SDK's `DefaultAzureCredential`: sign in locally using `az login` with
-the identity granted access to the chosen container (Azure CLI is needed only for
-this authentication option). Managed identity or the Azure environment credential
-chain also works. Do not set `MCDB_COSMOS_KEY` when using this path.
+The key takes precedence over Azure identity; **`az login` is not needed** for this
+setup. Once the script succeeds, run in the same terminal:
 
 ```powershell
-az login
-$env:MCDB_DATABASE = 'your-existing-test-database'
-$env:MCDB_COLLECTION = 'your-existing-test-container'
-$env:MCDB_RUN_PREFIX = 'pojo-review'
-$env:MCDB_COSMOS_ENDPOINT = 'https://YOUR-ACCOUNT.documents.azure.com/'
-java -cp $jar $main live cosmos --allow-live
-$LASTEXITCODE
+$jar = 'target\multiclouddb-samples-1.0.0-SNAPSHOT-jar-with-dependencies.jar'
+$main = 'com.multiclouddb.samples.serialization.ComplexPojoSample'
+try {
+    java -cp $jar $main live cosmos --allow-live
+    $result = $LASTEXITCODE
+} finally {
+    Remove-Item Env:MCDB_COSMOS_KEY -ErrorAction SilentlyContinue
+}
+$result
 ```
 
-If account-key authentication is required, set `MCDB_COSMOS_KEY` privately through
-your secret manager/process environment, then run the same command. It takes
-precedence over the credential chain. Clear it after use:
-`Remove-Item Env:MCDB_COSMOS_KEY -ErrorAction SilentlyContinue`.
+To run again after clearing the key, use the setup script with `-Load` first.
+The underlying Java SDK credential-chain fallback is unchanged; this setup script
+always asks for a primary key and does not silently select that fallback.
 
 ## DynamoDB live (PowerShell)
 

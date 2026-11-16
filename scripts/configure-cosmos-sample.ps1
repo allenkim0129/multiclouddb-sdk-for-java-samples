@@ -39,7 +39,7 @@ if ($Load) {
     $settings = Get-Content -LiteralPath $configPath -Raw | ConvertFrom-Json
     Assert-Settings $settings
 } else {
-    Write-Host 'Use an existing test container with partition key /partitionKey. Do not enter account keys.'
+    Write-Host 'Use an existing test container with partition key /partitionKey.'
     $settings = [pscustomobject]@{
         endpoint = (Read-Host 'Cosmos HTTPS endpoint').Trim()
         database = (Read-Host 'Existing database name').Trim()
@@ -52,20 +52,35 @@ if ($Load) {
             throw 'Cancelled; saved config and environment were not changed.'
         }
     }
-    New-Item -ItemType Directory -Force (Split-Path -Parent $configPath) | Out-Null
-    $settings | ConvertTo-Json | Set-Content -LiteralPath $configPath -Encoding UTF8
 }
 
-$env:MCDB_COSMOS_ENDPOINT = $settings.endpoint
-$env:MCDB_DATABASE = $settings.database
-$env:MCDB_COLLECTION = $settings.collection
-$env:MCDB_RUN_PREFIX = $settings.runPrefix
+Write-Host 'Enter the primary key, not the connection string. Paste with right-click or Shift+Insert.'
+$secureKey = Read-Host 'Cosmos PRIMARY KEY (hidden; never saved)' -AsSecureString
+$primaryKey = $null
+try {
+    $primaryKey = [System.Net.NetworkCredential]::new('', $secureKey).Password
+    if ([string]::IsNullOrWhiteSpace($primaryKey)) {
+        throw 'Primary key is required; saved config and environment were not changed.'
+    }
+    if (-not $Load) {
+        New-Item -ItemType Directory -Force (Split-Path -Parent $configPath) | Out-Null
+        $settings | ConvertTo-Json | Set-Content -LiteralPath $configPath -Encoding UTF8
+    }
+    $env:MCDB_COSMOS_ENDPOINT = $settings.endpoint
+    $env:MCDB_DATABASE = $settings.database
+    $env:MCDB_COLLECTION = $settings.collection
+    $env:MCDB_RUN_PREFIX = $settings.runPrefix
+    $env:MCDB_COSMOS_KEY = $primaryKey
+} finally {
+    $primaryKey = $null
+    if ($null -ne $secureKey) {
+        $secureKey.Dispose()
+    }
+}
 
 Write-Host 'Config ready: .local/cosmos-sample.json (gitignored; no credentials).'
 Write-Host 'Variables are set for this terminal only. In a new terminal, run this script with -Load.'
-if (-not [string]::IsNullOrWhiteSpace($env:MCDB_COSMOS_KEY)) {
-    Write-Warning 'MCDB_COSMOS_KEY is already set and takes precedence over Azure identity. It was not saved.'
-} else {
-    Write-Host 'Authentication uses DefaultAzureCredential; sign in with az login if using Azure CLI credentials.'
-}
+Write-Host 'Primary-key authentication is ready; az login is not needed.'
+Write-Host 'The key remains in this terminal environment until cleared or the terminal closes.'
+Write-Host 'After testing: Remove-Item Env:MCDB_COSMOS_KEY -ErrorAction SilentlyContinue'
 Write-Host 'No cloud connection or test was started. Run the sample separately with live cosmos --allow-live.'
