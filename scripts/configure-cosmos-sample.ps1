@@ -12,8 +12,9 @@ $legacyPath = Join-Path $root '.local/cosmos-sample.json'
 
 function Show-ConfigLocation {
     Write-Host "Config ready: $configPath (gitignored; contains plaintext primary key)."
-    Write-Host 'The sample reads this file from disk; no environment setup or az login is needed.'
-    Write-Host 'Run from the repository root, or set -Dmulticlouddb.config to the full file path.'
+    Write-Host 'The shared ConfigLoader reads this file from the runtime classpath; no az login is needed.'
+    Write-Host 'Keep the JAR first, then add src/main/resources to the classpath (Windows: -cp "$jar;src/main/resources").'
+    Write-Host 'To select a different config, set -Dmulticlouddb.config to its resource name, not a filesystem path.'
     Write-Host 'No cloud connection or test was started. Run the sample separately with live cosmos --allow-live.'
 }
 

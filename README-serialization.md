@@ -18,7 +18,7 @@ The `public static void main(String[] args)` method is in
 | [Order.java](src/main/java/com/multiclouddb/samples/serialization/Order.java) | What the application owns: nested POJOs and Java field types |
 | [OrderFixtures.java](src/main/java/com/multiclouddb/samples/serialization/OrderFixtures.java) | Visible synthetic inputs; compare with the [independent JSON fixture](src/main/resources/fixtures/baseline.json) |
 | [ComplexPojoSample.java](src/main/java/com/multiclouddb/samples/serialization/ComplexPojoSample.java) | Jackson `ObjectMapper` setup, direct `convertValue` calls, public SDK calls in `exercise`, diagnostics, comparison and cleanup |
-| [LiveSettings.java](src/main/java/com/multiclouddb/samples/serialization/LiveSettings.java) | External properties loading, primary-key configuration, live opt-in and legacy environment compatibility |
+| [ConfigLoader.java](src/main/java/com/multiclouddb/samples/ConfigLoader.java) | Existing shared properties loader used by the other samples |
 
 Short walkthrough: configure your live test target, follow one original order into
 `MAPPER.convertValue`, and compare its returned Map/types and restored POJO to the
@@ -134,7 +134,8 @@ Then run from the repository root (Cosmos example):
 ```powershell
 $jar = 'target\multiclouddb-samples-1.0.0-SNAPSHOT-jar-with-dependencies.jar'
 $main = 'com.multiclouddb.samples.serialization.ComplexPojoSample'
-java -cp $jar $main live cosmos --allow-live
+$cp = "$jar;src/main/resources"
+java -cp $cp $main live cosmos --allow-live
 $LASTEXITCODE
 ```
 
@@ -175,21 +176,23 @@ network timeouts can add latency/requests; this is not a hard monetary/time budg
 | Provider | Required existing schema | Data permissions |
 | --- | --- | --- |
 | Cosmos DB for NoSQL | Database + container, partition key path **`/partitionKey`**, normal `id` | Read metadata plus item create/read/replace/upsert/query/delete on the test container; e.g. appropriately scoped Cosmos DB data-plane RBAC |
-| DynamoDB | Physical table **`<MCDB_DATABASE>__<MCDB_COLLECTION>`**, String hash key **`partitionKey`**, String range key **`sortKey`** | `dynamodb:PutItem`, `GetItem`, `Query`, `DeleteItem` on that table; no Scan/CreateTable/DeleteTable needed |
+| DynamoDB | Physical table **`<database>__<collection>`** from the properties file, String hash key **`partitionKey`**, String range key **`sortKey`** | `dynamodb:PutItem`, `GetItem`, `Query`, `DeleteItem` on that table; no Scan/CreateTable/DeleteTable needed |
 
-The POJO sample follows the existing `.properties` naming convention but reads its
-config **from disk**, not from the JAR classpath. Its secret
-`src/main/resources/serialization-cosmos-cloud.properties` file is gitignored
-and explicitly excluded from the default Maven resources; the serialization profile
-includes only fixtures, static UI assets and logging config. Neither profile packages
-this secret file. Other samples' historical classpath-config workflow is unchanged.
+The POJO sample uses the same **`ConfigLoader` and `.properties` format as the other
+samples**, with no separate settings class or `MCDB_*` environment mapping.
+Filled `src/main/resources/serialization-*-cloud.properties` files are gitignored
+and excluded from both builds' JARs. Put `src/main/resources` on the runtime
+classpath **after the JAR** to load these files without packaging secrets.
+Keeping the JAR first also preserves its safe logging configuration.
+On Windows separate classpath entries with `;`; on Linux/macOS use `:`.
+Other samples' configuration code is unchanged.
 Never paste account keys into source, commands recorded in shell history, chat, logs,
 or a JAR. Provider diagnostic logging is disabled in this profile. Errors print
 operation, exception type and SDK error category, not native messages/causes that
 could expose credentials. Diagnose access errors privately in your cloud tooling.
 
 Required target names are restricted to 1-63 letters/digits/underscores/hyphens;
-`multiclouddb.runPrefix` (or legacy `MCDB_RUN_PREFIX`) allows 1-32 letters/digits/hyphens. A fresh UUID is appended on every
+`multiclouddb.runPrefix` allows 1-32 letters/digits/hyphens. A fresh UUID is appended on every
 run; all queries are partition-scoped to that unique run.
 
 ## Cosmos live (PowerShell)
@@ -244,7 +247,7 @@ location; Java validates it before connecting. Otherwise it migrates
 JSON is deliberately not deleted and may still contain a secret; remove that
 specific file yourself after checking the new configuration.
 
-**Rebuild once after pulling the properties-support code** using the pinned build
+**Rebuild once after pulling the shared-loader update** using the pinned build
 script or the sample-only Maven command above. Later properties edits require
 no rebuild. **`az login` is not needed** for primary-key authentication.
 Run from the repository root:
@@ -252,32 +255,54 @@ Run from the repository root:
 ```powershell
 $jar = 'target\multiclouddb-samples-1.0.0-SNAPSHOT-jar-with-dependencies.jar'
 $main = 'com.multiclouddb.samples.serialization.ComplexPojoSample'
-java -cp $jar $main live cosmos --allow-live
+$cp = "$jar;src/main/resources"
+java -cp $cp $main live cosmos --allow-live
 $LASTEXITCODE
 ```
 
-To choose an explicit file or run from a different directory:
+To select another properties resource in that directory:
 
 ```powershell
-java "-Dmulticlouddb.config=C:\path\to\serialization-cosmos-cloud.properties" `
-    -cp $jar $main live cosmos --allow-live
+java "-Dmulticlouddb.config=serialization-other-cloud.properties" `
+    -cp $cp $main live cosmos --allow-live
 ```
 
-This property is a **filesystem path** for the POJO sample, unlike the old apps'
-classpath resource name. The file is read as UTF-8 (optional BOM accepted) using
-Java properties escaping rules. The setup script escapes special characters.
-Configuration precedence: explicit `-Dmulticlouddb.config`, then the default
-properties path for Cosmos, then legacy environment settings if no file is selected.
-A selected file supplies **all** target/key values; it never merges stale environment
-credentials. Missing/unreadable/invalid selected files or missing keys fail closed;
-no silent environment/identity fallback. The file workflow supports Cosmos; Dynamo
-continues using its documented environment/credential-chain setup.
+`multiclouddb.config` is now a **classpath resource name**, just like the other apps,
+not a filesystem path. The default name is `serialization-cosmos-cloud.properties`
+for Cosmos and `serialization-dynamo-cloud.properties` for Dynamo. For a different
+directory, add that directory after the JAR on the classpath.
+The shared loader uses Java `.properties` escaping rules (ASCII/ISO-8859-1, no BOM;
+use Unicode escapes for other characters). Existing files generated by the setup
+script contain ASCII properties and can be reused without changes.
+
+The shared loader supports `-Dmulticlouddb.*` property overrides. Do not pass keys
+on the command line; keep them in the ignored properties file. The sample checks
+the provider matches the command and requires the target, run prefix and connection
+properties before creating a client. Missing configuration does not fall back to
+emulator targets or legacy `MCDB_*` environment values.
 
 Remove any old `MCDB_COSMOS_KEY` environment value if you used the previous setup:
 `Remove-Item Env:MCDB_COSMOS_KEY -ErrorAction SilentlyContinue`. This does not erase
 the primary key stored in either local config file.
 
 ## DynamoDB live (PowerShell)
+
+Copy the [Dynamo template](src/main/resources/serialization-dynamo-cloud.properties.template)
+to `src/main/resources/serialization-dynamo-cloud.properties` and fill in the
+region, database, collection and run prefix:
+
+```powershell
+Copy-Item src/main/resources/serialization-dynamo-cloud.properties.template `
+    src/main/resources/serialization-dynamo-cloud.properties
+```
+
+```properties
+multiclouddb.provider=dynamo
+multiclouddb.connection.region=us-east-1
+multiclouddb.database=your-test-db
+multiclouddb.collection=your-test-orders
+multiclouddb.runPrefix=pojo-review
+```
 
 The SDK uses the AWS default credential chain. These commands use temporary
 environment credentials exported from an already configured SSO profile, so the
@@ -286,6 +311,9 @@ is required for this option; an IAM role or securely injected temporary environm
 credentials work too. No endpoint override or dummy credentials are installed.
 
 ```powershell
+$jar = 'target\multiclouddb-samples-1.0.0-SNAPSHOT-jar-with-dependencies.jar'
+$main = 'com.multiclouddb.samples.serialization.ComplexPojoSample'
+$cp = "$jar;src/main/resources"
 aws sso login --profile YOUR-TEST-PROFILE
 if ($LASTEXITCODE -ne 0) { throw 'AWS login failed' }
 $session = aws configure export-credentials --profile YOUR-TEST-PROFILE --format process | ConvertFrom-Json
@@ -294,13 +322,9 @@ $env:AWS_ACCESS_KEY_ID = $session.AccessKeyId
 $env:AWS_SECRET_ACCESS_KEY = $session.SecretAccessKey
 $env:AWS_SESSION_TOKEN = $session.SessionToken
 $session = $null
-$env:MCDB_AWS_REGION = 'us-east-1'
-$env:MCDB_DATABASE = 'your-test-db'
-$env:MCDB_COLLECTION = 'your-test-orders'
-$env:MCDB_RUN_PREFIX = 'pojo-review'
 # Existing physical table: your-test-db__your-test-orders
 try {
-    java -cp $jar $main live dynamo --allow-live
+    java -cp $cp $main live dynamo --allow-live
     $result = $LASTEXITCODE
 } finally {
     Remove-Item Env:AWS_ACCESS_KEY_ID, Env:AWS_SECRET_ACCESS_KEY, Env:AWS_SESSION_TOKEN -ErrorAction SilentlyContinue
@@ -514,7 +538,7 @@ in orchestration unit tests use an explicitly labeled in-memory test double:
 **they do not validate native mapping or live storage**. A separate offline cursor
 round-trip checks the directly required migration of existing change-feed samples.
 
-Observed offline results: twenty-three JUnit tests
+Observed offline results: twenty-one JUnit tests
 passed on JDK 17; the original released-SDK profile also compiled. The PowerShell
 script was executed end to end using PowerShell on Linux, including the installed/
 resolved artifact hash checks. Native Windows execution has not been performed.

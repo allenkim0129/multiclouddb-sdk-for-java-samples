@@ -154,7 +154,7 @@
                     <resource>
                         <directory>src/main/resources</directory>
                         <excludes>
-                            <exclude>serialization-cosmos-cloud.properties</exclude>
+                            <exclude>serialization-*-cloud.properties</exclude>
                         </excludes>
                     </resource>
                 </resources>

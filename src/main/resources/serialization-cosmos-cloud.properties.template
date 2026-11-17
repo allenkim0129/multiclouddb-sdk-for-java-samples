@@ -2,7 +2,8 @@
 # Copy to serialization-cosmos-cloud.properties or run scripts/configure-cosmos-sample.ps1.
 # The filled file is gitignored and excluded from Maven resources/JARs.
 # It contains a plaintext secret. Never share, force-add, or commit it.
-# Read from disk at runtime; changes to this file do not require a rebuild.
+# ConfigLoader loads this resource from the external runtime classpath; no rebuild needed.
+# Windows: java -cp "$jar;src/main/resources" $main live cosmos --allow-live
 # Container partition key path must be /partitionKey.
 multiclouddb.provider=cosmos
 multiclouddb.connection.endpoint=https://YOUR-ACCOUNT.documents.azure.com/

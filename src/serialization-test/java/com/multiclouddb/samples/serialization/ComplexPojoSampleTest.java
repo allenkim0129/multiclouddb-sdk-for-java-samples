@@ -86,31 +86,6 @@ class ComplexPojoSampleTest {
     }
 
     @Test
-    void liveRequiresExactOptInAndExplicitTargets() {
-        for (String[] invalid : List.of(
-                new String[0], new String[]{"preview"}, new String[]{"cosmos"},
-                new String[]{"live", "cosmos"},
-                new String[]{"live", "spanner", "--allow-live"},
-                new String[]{"live", "cosmos", "--allow-live", "--unknown"})) {
-            var failure = assertThrows(IllegalArgumentException.class, () -> LiveSettings.load(invalid, Map.of()));
-            assertEquals("Usage: live <cosmos|dynamo> --allow-live", failure.getMessage());
-        }
-        String[] args = {"live", "cosmos", "--allow-live"};
-        assertThrows(IllegalArgumentException.class, () -> LiveSettings.load(args, Map.of()));
-        var env = new HashMap<>(Map.of("MCDB_DATABASE", "sandbox", "MCDB_COLLECTION", "orders",
-                "MCDB_RUN_PREFIX", "test", "MCDB_COSMOS_ENDPOINT", "https://example.documents.azure.com/"));
-        assertTrue(LiveSettings.load(args, env).config().auth().isEmpty());
-        env.put("MCDB_AWS_REGION", "us-east-1");
-        assertEquals(ProviderId.DYNAMO,
-                LiveSettings.load(new String[]{"live", "dynamo", "--allow-live"}, env).provider());
-        env.put("MCDB_COSMOS_ENDPOINT", "https://user:secret@example.com/");
-        assertThrows(IllegalArgumentException.class, () -> LiveSettings.load(args, env));
-        env.put("MCDB_COSMOS_ENDPOINT", "https://example.documents.azure.com/");
-        env.put("MCDB_RUN_PREFIX", "*");
-        assertThrows(IllegalArgumentException.class, () -> LiveSettings.load(args, env));
-    }
-
-    @Test
     void customerWorkflowReplacesThenRestoresAndDeletesOnlyCreatedKey() throws Exception {
         List<String> operations = new ArrayList<>();
         Map<MulticloudDbKey, Map<String, Object>> store = new HashMap<>();

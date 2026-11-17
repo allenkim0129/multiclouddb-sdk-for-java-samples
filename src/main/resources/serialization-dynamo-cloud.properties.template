@@ -1,0 +1,11 @@
+# Complex POJO Serialization sample: existing DynamoDB test resources only.
+# Copy to serialization-dynamo-cloud.properties and fill in the region and target.
+# The filled file is gitignored and excluded from Maven resources/JARs.
+# Use the AWS default credential chain; never commit or package credentials.
+# Windows: java -cp "$jar;src/main/resources" $main live dynamo --allow-live
+# Existing physical table: <database>__<collection>, String partitionKey + String sortKey.
+multiclouddb.provider=dynamo
+multiclouddb.connection.region=
+multiclouddb.database=
+multiclouddb.collection=
+multiclouddb.runPrefix=pojo-test

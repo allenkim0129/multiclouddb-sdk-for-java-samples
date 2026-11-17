@@ -18,8 +18,10 @@ import com.multiclouddb.api.OperationDiagnostics;
 import com.multiclouddb.api.OperationOptions;
 import com.multiclouddb.api.QueryRequest;
 import com.multiclouddb.api.ResourceAddress;
+import com.multiclouddb.samples.ConfigLoader;
 
 import java.io.IOException;
+import java.net.URI;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -57,25 +59,72 @@ public final class ComplexPojoSample {
     }
 
     int run(String[] args) throws IOException, InterruptedException {
-        LiveSettings settings;
-        try {
-            settings = LiveSettings.load(args, System.getenv(),
-                    System.getProperty("multiclouddb.config"));
-        } catch (IllegalArgumentException invalid) {
-            // These validation messages contain variable names, never supplied values or native errors.
-            System.err.println("FAIL configuration: " + invalid.getMessage());
+        if (args.length != 3 || !args[0].equals("live")
+                || !(args[1].equals("cosmos") || args[1].equals("dynamo"))
+                || !args[2].equals("--allow-live")) {
+            System.err.println("FAIL configuration: Usage: live <cosmos|dynamo> --allow-live");
             return 1;
         }
+        ConfigLoader.AppConfig appConfig;
+        try {
+            appConfig = ConfigLoader.load("serialization-" + args[1] + "-cloud.properties");
+        } catch (IllegalArgumentException invalid) {
+            safeError("configuration", invalid);
+            return 1;
+        }
+        for (String name : List.of("multiclouddb.provider", "multiclouddb.database",
+                "multiclouddb.collection", "multiclouddb.runPrefix")) {
+            if (appConfig.property(name) == null || appConfig.property(name).isBlank()) {
+                System.err.println("FAIL configuration: Missing required property: " + name
+                        + ". Include the config directory on the runtime classpath.");
+                return 1;
+            }
+        }
+        if (!appConfig.sdk().provider().id().equals(args[1])) {
+            System.err.println("FAIL configuration: Config provider must match the live command");
+            return 1;
+        }
+        String database = appConfig.property("multiclouddb.database");
+        String collection = appConfig.property("multiclouddb.collection");
+        String prefix = appConfig.property("multiclouddb.runPrefix");
+        if (!database.matches("[A-Za-z0-9_-]{1,63}") || !collection.matches("[A-Za-z0-9_-]{1,63}")
+                || !prefix.matches("[A-Za-z0-9-]{1,32}")) {
+            System.err.println("FAIL configuration: Database/collection must be 1-63 letters, digits,"
+                    + " underscores or hyphens; runPrefix must be 1-32 letters, digits or hyphens");
+            return 1;
+        }
+        if (args[1].equals("cosmos")) {
+            String key = appConfig.property("multiclouddb.connection.key");
+            if (key == null || key.isBlank()) {
+                System.err.println("FAIL configuration: Missing required property: multiclouddb.connection.key");
+                return 1;
+            }
+            try {
+                URI endpoint = URI.create(appConfig.property("multiclouddb.connection.endpoint", ""));
+                if (!"https".equals(endpoint.getScheme()) || endpoint.getHost() == null
+                        || endpoint.getUserInfo() != null || endpoint.getQuery() != null || endpoint.getFragment() != null
+                        || !(endpoint.getPath().isEmpty() || endpoint.getPath().equals("/"))) {
+                    throw new IllegalArgumentException();
+                }
+            } catch (IllegalArgumentException invalid) {
+                System.err.println("FAIL configuration: multiclouddb.connection.endpoint must be an HTTPS account URL");
+                return 1;
+            }
+        } else if (!appConfig.property("multiclouddb.connection.region", "").matches("[a-z0-9-]+")) {
+            System.err.println("FAIL configuration: multiclouddb.connection.region must be an AWS region identifier");
+            return 1;
+        }
+        ResourceAddress address = new ResourceAddress(database, collection);
         System.out.println("Expected SDK SHA (use the pinned build script): " + SDK_SHA);
         System.out.println("SDK loaded from: " + MulticloudDbClient.class.getProtectionDomain().getCodeSource().getLocation());
-        String runId = settings.prefix() + "-" + UUID.randomUUID();
-        System.out.println("LIVE provider=" + settings.provider().id()
-                + " database=" + settings.address().database()
-                + " collection=" + settings.address().collection() + " runId=" + runId);
+        String runId = prefix + "-" + UUID.randomUUID();
+        System.out.println("LIVE provider=" + appConfig.sdk().provider().id()
+                + " database=" + address.database()
+                + " collection=" + address.collection() + " runId=" + runId);
         System.out.println("Existing targets only. Each confirmed-created key is deleted in finally.");
-        MulticloudDbClient client = MulticloudDbClientFactory.create(settings.config());
+        MulticloudDbClient client = MulticloudDbClientFactory.create(appConfig.sdk());
         try {
-            exercise(client, settings.address(), runId);
+            exercise(client, address, runId);
         } finally {
             closeClient(client);
         }

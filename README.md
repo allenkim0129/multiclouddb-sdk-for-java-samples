@@ -43,8 +43,10 @@ the new Map/cursor API, but packages only synthetic fixtures, static UI assets, 
 existing classpath-based app configurations are not included.
 Its primary-key setup script writes
 `src/main/resources/serialization-cosmos-cloud.properties` alongside the existing
-configs, but this gitignored secret file is **read from disk and excluded from
-both builds' JARs**. See [Cosmos setup](README-serialization.md#cosmos-live-powershell).
+configs. It uses the shared `ConfigLoader`; add the resources directory after the
+JAR on the runtime classpath (`"$jar;src/main/resources"` on Windows). The filled
+serialization configs remain **gitignored and excluded from both builds' JARs**.
+See [Cosmos setup](README-serialization.md#cosmos-live-powershell).
 
 ---
 
