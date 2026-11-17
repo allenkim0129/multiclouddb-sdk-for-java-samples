@@ -33,16 +33,17 @@ class ComplexPojoConfigTest {
     void liveRequiresExactOptInBeforeLoadingProperties() throws Exception {
         for (List<String> args : List.of(
                 List.<String>of(), List.of("preview"), List.of("cosmos"),
-                List.of("live", "cosmos"), List.of("live", "spanner", "--allow-live"),
-                List.of("live", "cosmos", "--allow-live", "--unknown"))) {
+                List.of("dynamo"), List.of("spanner", "--allow-live"),
+                List.of("cosmos", "--allow-live", "--unknown"),
+                List.of("live", "cosmos", "--allow-live"))) {
             String output = rejected(args, Map.of());
-            assertEquals("FAIL configuration: Usage: live <cosmos|dynamo> --allow-live", output.trim());
+            assertEquals("FAIL configuration: Usage: <cosmos|dynamo> --allow-live", output.trim());
         }
     }
 
     @Test
     void missingResourceDoesNotUseLegacyEnvironmentTargets() throws Exception {
-        String output = rejected(List.of("live", "cosmos", "--allow-live"), Map.of());
+        String output = rejected(List.of("cosmos", "--allow-live"), Map.of());
         assertTrue(output.contains("Missing required property: multiclouddb.provider"), output);
     }
 
@@ -57,7 +58,7 @@ class ComplexPojoConfigTest {
                 CONFIG.replace("provider=cosmos", "provider=dynamo"), "Config provider must match");
         for (var entry : cases.entrySet()) {
             Files.writeString(directory.resolve("serialization-cosmos-cloud.properties"), entry.getKey());
-            String output = rejected(List.of("live", "cosmos", "--allow-live"), Map.of());
+            String output = rejected(List.of("cosmos", "--allow-live"), Map.of());
             assertTrue(output.contains("Loaded config: serialization-cosmos-cloud.properties"), output);
             assertTrue(output.contains(entry.getValue()), output);
         }
@@ -67,7 +68,7 @@ class ComplexPojoConfigTest {
     void sharedLoaderAcceptsResourceSelectionAndSystemPropertyOverrides() throws Exception {
         Files.writeString(directory.resolve("chosen.properties"),
                 CONFIG.replace("synthetic-db", "*").replace("synthetic-private-key", ""));
-        String output = rejected(List.of("live", "cosmos", "--allow-live"), Map.of(
+        String output = rejected(List.of("cosmos", "--allow-live"), Map.of(
                 "multiclouddb.config", "chosen.properties", "multiclouddb.database", "overridden-db"));
         assertTrue(output.contains("Loaded config: chosen.properties"), output);
         assertTrue(output.contains("Missing required property: multiclouddb.connection.key"), output);
@@ -79,7 +80,7 @@ class ComplexPojoConfigTest {
         Files.writeString(directory.resolve("serialization-dynamo-cloud.properties"),
                 CONFIG.replace("provider=cosmos", "provider=dynamo")
                         + "multiclouddb.connection.region=\n");
-        String output = rejected(List.of("live", "dynamo", "--allow-live"), Map.of());
+        String output = rejected(List.of("dynamo", "--allow-live"), Map.of());
         assertTrue(output.contains("Loaded config: serialization-dynamo-cloud.properties"), output);
         assertTrue(output.contains("multiclouddb.connection.region must be an AWS region identifier"), output);
     }

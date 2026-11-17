@@ -3,7 +3,7 @@
 # The filled file is gitignored and excluded from Maven resources/JARs.
 # It contains a plaintext secret. Never share, force-add, or commit it.
 # ConfigLoader loads this resource from the external runtime classpath; no rebuild needed.
-# Windows: java -cp "$jar;src/main/resources" $main live cosmos --allow-live
+# Windows: java -cp "$jar;src/main/resources" $main cosmos --allow-live
 # Container partition key path must be /partitionKey.
 multiclouddb.provider=cosmos
 multiclouddb.connection.endpoint=https://YOUR-ACCOUNT.documents.azure.com/

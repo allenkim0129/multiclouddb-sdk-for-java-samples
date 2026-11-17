@@ -59,15 +59,14 @@ public final class ComplexPojoSample {
     }
 
     int run(String[] args) throws IOException, InterruptedException {
-        if (args.length != 3 || !args[0].equals("live")
-                || !(args[1].equals("cosmos") || args[1].equals("dynamo"))
-                || !args[2].equals("--allow-live")) {
-            System.err.println("FAIL configuration: Usage: live <cosmos|dynamo> --allow-live");
+        if (args.length != 2 || !(args[0].equals("cosmos") || args[0].equals("dynamo"))
+                || !args[1].equals("--allow-live")) {
+            System.err.println("FAIL configuration: Usage: <cosmos|dynamo> --allow-live");
             return 1;
         }
         ConfigLoader.AppConfig appConfig;
         try {
-            appConfig = ConfigLoader.load("serialization-" + args[1] + "-cloud.properties");
+            appConfig = ConfigLoader.load("serialization-" + args[0] + "-cloud.properties");
         } catch (IllegalArgumentException invalid) {
             safeError("configuration", invalid);
             return 1;
@@ -80,7 +79,7 @@ public final class ComplexPojoSample {
                 return 1;
             }
         }
-        if (!appConfig.sdk().provider().id().equals(args[1])) {
+        if (!appConfig.sdk().provider().id().equals(args[0])) {
             System.err.println("FAIL configuration: Config provider must match the live command");
             return 1;
         }
@@ -93,7 +92,7 @@ public final class ComplexPojoSample {
                     + " underscores or hyphens; runPrefix must be 1-32 letters, digits or hyphens");
             return 1;
         }
-        if (args[1].equals("cosmos")) {
+        if (args[0].equals("cosmos")) {
             String key = appConfig.property("multiclouddb.connection.key");
             if (key == null || key.isBlank()) {
                 System.err.println("FAIL configuration: Missing required property: multiclouddb.connection.key");

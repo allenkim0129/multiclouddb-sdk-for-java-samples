@@ -135,7 +135,7 @@ Then run from the repository root (Cosmos example):
 $jar = 'target\multiclouddb-samples-1.0.0-SNAPSHOT-jar-with-dependencies.jar'
 $main = 'com.multiclouddb.samples.serialization.ComplexPojoSample'
 $cp = "$jar;src/main/resources"
-java -cp $cp $main live cosmos --allow-live
+java -cp $cp $main cosmos --allow-live
 $LASTEXITCODE
 ```
 
@@ -256,7 +256,7 @@ Run from the repository root:
 $jar = 'target\multiclouddb-samples-1.0.0-SNAPSHOT-jar-with-dependencies.jar'
 $main = 'com.multiclouddb.samples.serialization.ComplexPojoSample'
 $cp = "$jar;src/main/resources"
-java -cp $cp $main live cosmos --allow-live
+java -cp $cp $main cosmos --allow-live
 $LASTEXITCODE
 ```
 
@@ -264,7 +264,7 @@ To select another properties resource in that directory:
 
 ```powershell
 java "-Dmulticlouddb.config=serialization-other-cloud.properties" `
-    -cp $cp $main live cosmos --allow-live
+    -cp $cp $main cosmos --allow-live
 ```
 
 `multiclouddb.config` is now a **classpath resource name**, just like the other apps,
@@ -324,7 +324,7 @@ $env:AWS_SESSION_TOKEN = $session.SessionToken
 $session = $null
 # Existing physical table: your-test-db__your-test-orders
 try {
-    java -cp $cp $main live dynamo --allow-live
+    java -cp $cp $main dynamo --allow-live
     $result = $LASTEXITCODE
 } finally {
     Remove-Item Env:AWS_ACCESS_KEY_ID, Env:AWS_SECRET_ACCESS_KEY, Env:AWS_SESSION_TOKEN -ErrorAction SilentlyContinue
