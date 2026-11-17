@@ -18,6 +18,8 @@ public final class OrderFixtures {
     private OrderFixtures() { }
 
     public static Order create(String runId, int revision) {
+        // Keep numeric values ordinary: this walkthrough tests object structure, not number limits.
+        // Decimal string constructors also make the intended sample values explicit.
         long sequence = 12345L;
         BigDecimal total = new BigDecimal("125.50");
         BigInteger externalNumber = new BigInteger("42");
@@ -25,6 +27,8 @@ public final class OrderFixtures {
         Map<String, Object> optionalFields = new LinkedHashMap<>();
         optionalFields.put("giftMessage", null);
         // "coupon" is deliberately absent; null and missing are checked separately.
+        // The leading-zero postal code is text, tags include both populated and empty lists,
+        // and dates exercise Instant plus LocalDate. All values are synthetic and editable here.
         return new Order("synthetic-order-baseline", runId, revision, Order.Status.NEW,
                 new Order.Customer("Synthetic Customer",
                         new Order.Address("Example City", "00123")),

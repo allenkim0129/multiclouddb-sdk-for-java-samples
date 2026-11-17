@@ -26,6 +26,8 @@ final class ExpectedDocuments {
             }
             Map<String, Object> expected = ComplexPojoSample.MAPPER
                     .readValue(input, ComplexPojoSample.MAP_TYPE);
+            // Only execution-specific fields vary; business values stay independent of the
+            // outgoing Map so a mapping error cannot silently redefine the expected result.
             expected.put("runId", runId);
             expected.put("revision", revision);
             return expected;
@@ -39,6 +41,8 @@ final class ExpectedDocuments {
         return result;
     }
 
+    // Collect all mismatches with paths such as $.items[0].sku instead of stopping at the first.
+    // Object key order is irrelevant; list order and the presence of every property are checked.
     static List<String> differences(Object expected, Object actual) {
         List<String> result = new ArrayList<>();
         compare("$", expected, actual, result);
@@ -64,7 +68,9 @@ final class ExpectedDocuments {
                 compare(path + "[" + i + "]", left.get(i), right.get(i), errors);
             }
         } else if (expected instanceof Number left && actual instanceof Number right) {
-            // Exact decimal comparison, never a double conversion or epsilon.
+            // Providers may return different Number subclasses or decimal scales.
+            // Compare their decimal values exactly (125.50 equals 125.5), without double coercion
+            // or tolerance that could hide a changed value.
             if (new BigDecimal(left.toString()).compareTo(new BigDecimal(right.toString())) != 0) {
                 errors.add(path + " value mismatch expected=" + left + " actual=" + right);
             }

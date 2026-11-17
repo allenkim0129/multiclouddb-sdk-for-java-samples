@@ -15,8 +15,11 @@ import java.util.Map;
  * Fields cannot be reassigned, but referenced lists/maps are not automatically immutable.
  */
 public record Order(
+        // orderId is business data; runId/revision let the sample isolate and observe its writes.
         String orderId, String runId, int revision, Status status, Customer customer,
+        // Nested objects, typed lists and Maps exercise different shapes in the same document.
         List<LineItem> items, Map<String, String> labels, Map<String, Object> optionalFields,
+        // Jackson maps Java dates to ISO text; note intentionally demonstrates a nullable field.
         Instant placedAt, LocalDate deliveryDate, String note,
         long sequence, BigInteger externalNumber, BigDecimal total) {
     public enum Status { NEW, PAID }

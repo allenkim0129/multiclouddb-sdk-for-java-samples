@@ -45,6 +45,11 @@ public final class ComplexPojoSample {
     static final TypeReference<Map<String, Object>> MAP_TYPE = new TypeReference<>() { };
     private int failures;
 
+    /**
+     * Process entry point. run() returns the accumulated workflow result; failures that escape
+     * that workflow are reported here without printing native exception details.
+     * A nonzero process exit lets a developer or script distinguish failure from completion.
+     */
     public static void main(String[] args) {
         int exit;
         try {
@@ -65,20 +70,30 @@ public final class ComplexPojoSample {
         }
     }
 
+    /**
+     * Account setup and client lifetime, separate from the POJO walkthrough in exercise().
+     * No SDK client is created until the command and required configuration have been checked.
+     */
     int run(String[] args) throws IOException, InterruptedException {
+        // The only argument selects Cosmos or Dynamo. There is no preview mode:
+        // a valid invocation with valid settings proceeds to real database operations.
         if (args.length != 1 || !(args[0].equals("cosmos") || args[0].equals("dynamo"))) {
             System.err.println("FAIL configuration: Usage: <cosmos|dynamo>");
             return 1;
         }
         ConfigLoader.AppConfig appConfig;
         try {
-            // Same loader as the other samples. -Dmulticlouddb.config can select another resource.
+            // Same loader as the other samples. The default resource follows the provider name.
+            // -Dmulticlouddb.config selects a different classpath resource, and the shared loader
+            // applies multiclouddb.* system-property overrides. It does not read MCDB_* variables.
             appConfig = ConfigLoader.load("serialization-" + args[0] + "-cloud.properties");
         } catch (IllegalArgumentException invalid) {
             safeError("configuration", invalid);
             return 1;
         }
-        // Unlike emulator demos, this live sample must not invent a default database/container.
+        // The shared loader can return settings even when a resource is missing.
+        // Require an explicit provider, target and run prefix rather than silently selecting
+        // an emulator/demo destination. Errors name properties, not their potentially secret values.
         for (String name : List.of("multiclouddb.provider", "multiclouddb.database",
                 "multiclouddb.collection", "multiclouddb.runPrefix")) {
             if (appConfig.property(name) == null || appConfig.property(name).isBlank()) {
@@ -87,6 +102,8 @@ public final class ComplexPojoSample {
                 return 1;
             }
         }
+        // An explicitly selected resource may belong to another provider. Reject that mismatch
+        // rather than connecting somewhere different from what the command requested.
         if (!appConfig.sdk().provider().id().equals(args[0])) {
             System.err.println("FAIL configuration: Config provider must match the live command");
             return 1;
@@ -94,12 +111,17 @@ public final class ComplexPojoSample {
         String database = appConfig.property("multiclouddb.database");
         String collection = appConfig.property("multiclouddb.collection");
         String prefix = appConfig.property("multiclouddb.runPrefix");
+        // Keep identifiers predictable for this portable example and its printed cleanup keys.
+        // These are sample restrictions, not a complete statement of each provider's naming rules.
         if (!database.matches("[A-Za-z0-9_-]{1,63}") || !collection.matches("[A-Za-z0-9_-]{1,63}")
                 || !prefix.matches("[A-Za-z0-9-]{1,32}")) {
             System.err.println("FAIL configuration: Database/collection must be 1-63 letters, digits,"
                     + " underscores or hyphens; runPrefix must be 1-32 letters, digits or hyphens");
             return 1;
         }
+        // Cosmos uses the primary key saved in the local properties file. Check its presence
+        // and the endpoint shape here; actual credentials/permissions are checked by the service.
+        // Dynamo needs a configured region and uses the SDK's credential configuration/chain.
         if (args[0].equals("cosmos")) {
             String key = appConfig.property("multiclouddb.connection.key");
             if (key == null || key.isBlank()) {
@@ -121,6 +143,9 @@ public final class ComplexPojoSample {
             System.err.println("FAIL configuration: multiclouddb.connection.region must be an AWS region identifier");
             return 1;
         }
+        // ResourceAddress names an existing logical database/collection; this sample never
+        // provisions a database, container or table. The SHA is the expected build pin:
+        // the build script verifies artifacts, while these messages show runtime provenance.
         ResourceAddress address = new ResourceAddress(database, collection);
         System.out.println("Expected SDK SHA (use the pinned build script): " + SDK_SHA);
         System.out.println("SDK loaded from: " + MulticloudDbClient.class.getProtectionDomain().getCodeSource().getLocation());
@@ -130,6 +155,8 @@ public final class ComplexPojoSample {
                 + " database=" + address.database()
                 + " collection=" + address.collection() + " runId=" + runId);
         System.out.println("Existing targets only. Each confirmed-created key is deleted in finally.");
+        // One client serves the whole workflow. Closing it releases SDK resources, but is
+        // separate from deleting test data: exercise() owns that cleanup in its own finally block.
         MulticloudDbClient client = MulticloudDbClientFactory.create(appConfig.sdk());
         try {
             exercise(client, address, runId);
@@ -152,15 +179,25 @@ public final class ComplexPojoSample {
         }
     }
 
+    /**
+     * Follow this method to review customer code end to end:
+     * create -> read/restore -> replacement update -> full upsert -> query/restore -> delete.
+     * ExpectedDocuments is assertion scaffolding; Jackson and client calls are the integration.
+     */
     void exercise(MulticloudDbClient client, ResourceAddress address,
                   String runId) throws IOException, InterruptedException {
         // The provider maps this logical key to Cosmos partitionKey/id or Dynamo partitionKey/sortKey.
         MulticloudDbKey key = MulticloudDbKey.of(runId, "jackson-baseline");
+        // Track whether create returned successfully, not merely whether it was attempted.
+        // step identifies the operation that failed without exposing a native exception message.
         boolean created = false;
         String step = "prepare";
         System.out.println("\nLIVE jackson/baseline"
                 + " partitionKey=" + key.partitionKey() + " sortKey/id=" + key.sortKey());
         try {
+            // Prepare two independent inputs: the Java object to write and hand-authored JSON
+            // describing its expected data. Both receive this run's ID and initial revision.
+            // Printing them makes it possible to review the inputs before judging SDK behavior.
             Order original = OrderFixtures.create(runId, 1);
             Map<String, Object> expected = ExpectedDocuments.load(runId, 1);
             System.out.println("Original POJO: " + original);
@@ -168,9 +205,13 @@ public final class ComplexPojoSample {
             // The SDK never receives Order: Jackson first converts its entire nested object graph.
             Map<String, Object> document = MAPPER.convertValue(original, MAP_TYPE);
             show("Jackson -> Map", document);
+            // Stop before writing if application mapping already changed the expected data.
+            // That failure belongs to the customer conversion, not the database round trip.
             if (!check("POJO -> Map before I/O", expected, document)) {
                 return;
             }
+            // create receives the address, logical key and neutral Map, not the original Order.
+            // It returns no document here; the following read verifies what can be retrieved.
             step = "create";
             client.create(address, key, document);
             created = true;
@@ -178,6 +219,8 @@ public final class ComplexPojoSample {
             // Intentional error examples use only our newly created key or an unwritten sibling key.
             step = "representative failure handling";
             demonstrateFailureHandling(client, address, key, document);
+            // Retrieve revision 1, then check both the returned application payload and the
+            // reconstructed Order. Successful retrieval alone does not prove correct mapping.
             step = "read after create";
             Map<String, Object> returned = awaitRead(client, address, key, 1);
             show("SDK read Map (including provider fields)", returned);
@@ -189,6 +232,8 @@ public final class ComplexPojoSample {
             check("restored POJO vs independent expected", expected, MAPPER.convertValue(restored, MAP_TYPE));
 
             // In this pinned SDK, update replaces the body; omitted customer/items must disappear.
+            // Revision 2 intentionally contains too little data for a complete Order, so compare
+            // it as a Map instead of trying to restore fields that were deliberately removed.
             step = "update";
             Map<String, Object> replacement = Map.of("orderId", original.orderId(),
                     "runId", runId, "revision", 2, "status", "PAID");
@@ -200,6 +245,8 @@ public final class ComplexPojoSample {
                     replacement, ExpectedDocuments.payload(afterUpdate));
 
             // Restore the complete document after the deliberately incomplete replacement.
+            // Revision 3 lets the read helper distinguish this write from an older visible version.
+            // The input and expectation are rebuilt explicitly rather than reusing the partial Map.
             step = "upsert";
             Order restoredOrder = OrderFixtures.create(runId, 3);
             Map<String, Object> upsertDocument = MAPPER.convertValue(restoredOrder, MAP_TYPE);
@@ -213,6 +260,9 @@ public final class ComplexPojoSample {
             System.out.println("Restored POJO: " + upserted);
             check("restored POJO vs independent expected", expected, MAPPER.convertValue(upserted, MAP_TYPE));
 
+            // Query is a separate public SDK path from point-read. Restrict it to this run,
+            // expect exactly one matching document, and restore each returned payload to Order.
+            // Compare against revision 3 because the full upsert was the most recent write.
             step = "query";
             List<Map<String, Object>> rows = awaitQuery(client, address, runId, key.sortKey());
             check("query row count in this run/case", 1, rows.size());
@@ -225,6 +275,8 @@ public final class ComplexPojoSample {
                 check("restored POJO vs independent expected", expected, MAPPER.convertValue(queried, MAP_TYPE));
             }
         } catch (MulticloudDbException | IllegalArgumentException | IllegalStateException failure) {
+            // An operation/conversion exception stops later steps, but still reaches finally.
+            // A failed assertion instead increments the counter and allows further observations.
             failures++;
             safeError(step, failure);
             if (step.equals("create") && !created) {
@@ -239,8 +291,15 @@ public final class ComplexPojoSample {
         }
     }
 
+    /**
+     * Deliberately demonstrate three public API outcomes: missing read, duplicate create,
+     * and an unsupported Map value. Only the expected category counts as a successful probe;
+     * authentication, throttling or other unexpected errors propagate to the workflow.
+     */
     void demonstrateFailureHandling(MulticloudDbClient client, ResourceAddress address,
                                     MulticloudDbKey ownedKey, Map<String, Object> document) {
+        // This sibling key is never written by the sample. Missing read returns null rather
+        // than throwing; the application decides how that becomes its own not-found response.
         MulticloudDbKey missingKey = MulticloudDbKey.of(ownedKey.partitionKey(),
                 ownedKey.sortKey() + "-never-created");
         DocumentResult missing = client.read(address, missingKey);
@@ -251,6 +310,7 @@ public final class ComplexPojoSample {
             System.err.println("FAIL missing read returned a document; no write/delete attempted on that key");
         }
 
+        // Reuse the confirmed-created key to provoke CONFLICT without creating another document.
         try {
             client.create(address, ownedKey, document);
             failures++;
@@ -277,6 +337,11 @@ public final class ComplexPojoSample {
         }
     }
 
+    /**
+     * Delete only the confirmed-created document and verify its absence with bounded reads.
+     * Failed/ambiguous cleanup remains a failure and prints the exact key for manual inspection;
+     * it never falls back to deleting a partition, container, database or table.
+     */
     private void cleanup(MulticloudDbClient client, ResourceAddress address, MulticloudDbKey key)
             throws InterruptedException {
         try {
@@ -296,7 +361,11 @@ public final class ComplexPojoSample {
         }
     }
 
-    /** Wait only for missing/stale reads; value mismatches are checked separately, not retried away. */
+    /**
+     * Wait for the requested application revision to become visible, at most five reads.
+     * Missing/stale results may be retried; exceptions propagate and payload value mismatches
+     * are checked by the caller, not retried away. Metadata is printed but is not part of Order.
+     */
     static Map<String, Object> awaitRead(MulticloudDbClient client, ResourceAddress address,
                                        MulticloudDbKey key, int revision) throws InterruptedException {
         for (int attempt = 0; attempt < 5; attempt++) {
@@ -316,6 +385,11 @@ public final class ComplexPojoSample {
         throw new IllegalStateException("Expected revision not visible after bounded reads");
     }
 
+    /**
+     * Read bounded pages from this run's partition and retain only the requested document key.
+     * A continuation token means another page may exist, even if the current page is empty.
+     * Retry missing/stale revision-3 results at most five times; never scan without a page budget.
+     */
     static List<Map<String, Object>> awaitQuery(MulticloudDbClient client, ResourceAddress address,
                                                 String runId, String caseId) throws InterruptedException {
         for (int attempt = 0; attempt < 5; attempt++) {
@@ -352,6 +426,10 @@ public final class ComplexPojoSample {
         throw new IllegalStateException("Expected query rows not visible after bounded queries");
     }
 
+    /**
+     * Record a failed comparison without throwing, so later operations can provide more evidence.
+     * The final exit code reflects every recorded failure; printing later PASS lines does not erase it.
+     */
     private boolean check(String label, Object expected, Object actual) {
         List<String> differences = ExpectedDocuments.differences(expected, actual);
         System.out.println((differences.isEmpty() ? "PASS " : "FAIL ") + label);
@@ -362,6 +440,8 @@ public final class ComplexPojoSample {
         return differences.isEmpty();
     }
 
+    // JSON makes the document readable; the additional leaf types reveal Java representations
+    // that JSON alone cannot distinguish (for example Integer, Long and BigDecimal).
     private static void show(String label, Map<String, Object> map) throws JsonProcessingException {
         System.out.println(label + ":\n" + MAPPER
                 .writerWithDefaultPrettyPrinter().writeValueAsString(map));
@@ -375,6 +455,8 @@ public final class ComplexPojoSample {
                 + " (native details suppressed)");
     }
 
+    // Report the portable error separately from optional diagnostics. Their status fields
+    // are not interchangeable: an error can have an HTTP status while diagnostics has none.
     static String errorSummary(MulticloudDbException failure) {
         var error = failure.error();
         return "error{category=" + error.category()
