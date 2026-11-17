@@ -11,7 +11,6 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.Arrays;
 import java.util.Map;
 import java.util.Properties;
 
@@ -20,23 +19,17 @@ record LiveSettings(ProviderId provider, ResourceAddress address,
     static final Path DEFAULT_COSMOS_CONFIG =
             Path.of("src/main/resources/serialization-cosmos-cloud.properties");
 
-    static boolean preview(String[] args) {
-        if (args.length == 0 || Arrays.equals(args, new String[]{"preview"})) {
-            return true;
-        }
+    private static void validateArguments(String[] args) {
         if (args.length != 3 || !args[0].equals("live")
                 || !(args[1].equals("cosmos") || args[1].equals("dynamo"))
                 || !args[2].equals("--allow-live")) {
             throw new IllegalArgumentException(
-                    "Usage: preview | live <cosmos|dynamo> --allow-live");
+                    "Usage: live <cosmos|dynamo> --allow-live");
         }
-        return false;
     }
 
     static LiveSettings load(String[] args, Map<String, String> env) {
-        if (preview(args)) {
-            throw new IllegalArgumentException("Preview must not load account configuration");
-        }
+        validateArguments(args);
         String database = identifier(env, "MCDB_DATABASE");
         String collection = identifier(env, "MCDB_COLLECTION");
         String prefix = required(env, "MCDB_RUN_PREFIX");
@@ -74,9 +67,7 @@ record LiveSettings(ProviderId provider, ResourceAddress address,
     }
 
     static LiveSettings load(String[] args, Map<String, String> env, String configFile) {
-        if (preview(args)) {
-            throw new IllegalArgumentException("Preview must not load account configuration");
-        }
+        validateArguments(args);
         if (configFile != null) {
             if (configFile.isBlank()) {
                 throw new IllegalArgumentException("multiclouddb.config must be a non-empty filesystem path");

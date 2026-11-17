@@ -26,7 +26,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
-/** Run preview by default; live requires both an explicit mode and --allow-live. */
+/** Live Cosmos/Dynamo sample; requires an explicit target and --allow-live. */
 public final class ComplexPojoSample {
     public static final String SDK_SHA = "ef339fb6529a1b367987bff0b4884c4127708fd9";
     static final ObjectMapper MAPPER = new ObjectMapper()
@@ -57,11 +57,9 @@ public final class ComplexPojoSample {
     }
 
     int run(String[] args) throws IOException, InterruptedException {
-        boolean preview;
         LiveSettings settings;
         try {
-            preview = LiveSettings.preview(args);
-            settings = preview ? null : LiveSettings.load(args, System.getenv(),
+            settings = LiveSettings.load(args, System.getenv(),
                     System.getProperty("multiclouddb.config"));
         } catch (IllegalArgumentException invalid) {
             // These validation messages contain variable names, never supplied values or native errors.
@@ -70,31 +68,16 @@ public final class ComplexPojoSample {
         }
         System.out.println("Expected SDK SHA (use the pinned build script): " + SDK_SHA);
         System.out.println("SDK loaded from: " + MulticloudDbClient.class.getProtectionDomain().getCodeSource().getLocation());
-        if (preview) {
-            Order original = OrderFixtures.create("preview", 1);
-            Map<String, Object> expected = ExpectedDocuments.load("preview", 1);
-            System.out.println("\nPREVIEW jackson/baseline");
-            System.out.println("Original POJO: " + original);
-            show("Independent expected JSON", expected);
-            Map<String, Object> document = MAPPER.convertValue(original, MAP_TYPE);
-            show("Jackson -> Map", document);
-            check("POJO -> Map", expected, document);
-            Order restored = MAPPER.convertValue(document, Order.class);
-            System.out.println("Restored POJO: " + restored);
-            check("restored POJO vs independent expected", expected, MAPPER.convertValue(restored, MAP_TYPE));
-            System.out.println("OFFLINE ONLY: no SDK writes/reads/queries or cloud connections were performed.");
-        } else {
-            String runId = settings.prefix() + "-" + UUID.randomUUID();
-            System.out.println("LIVE provider=" + settings.provider().id()
-                    + " database=" + settings.address().database()
-                    + " collection=" + settings.address().collection() + " runId=" + runId);
-            System.out.println("Existing targets only. Each confirmed-created key is deleted in finally.");
-            MulticloudDbClient client = MulticloudDbClientFactory.create(settings.config());
-            try {
-                exercise(client, settings.address(), runId);
-            } finally {
-                closeClient(client);
-            }
+        String runId = settings.prefix() + "-" + UUID.randomUUID();
+        System.out.println("LIVE provider=" + settings.provider().id()
+                + " database=" + settings.address().database()
+                + " collection=" + settings.address().collection() + " runId=" + runId);
+        System.out.println("Existing targets only. Each confirmed-created key is deleted in finally.");
+        MulticloudDbClient client = MulticloudDbClientFactory.create(settings.config());
+        try {
+            exercise(client, settings.address(), runId);
+        } finally {
+            closeClient(client);
         }
         System.out.println((failures == 0 ? "PASS" : "FAIL") + " summary: " + failures + " failed checks/operations");
         return failures == 0 ? 0 : 1;

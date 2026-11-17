@@ -5,6 +5,8 @@ package com.multiclouddb.samples.serialization;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
+import java.io.ByteArrayOutputStream;
+import java.io.PrintStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -80,18 +82,25 @@ class LiveSettingsTest {
     }
 
     @Test
-    void previewNeverReadsEvenAnExplicitMissingConfig() throws Exception {
+    void missingOrRemovedModeFailsWithUsageBeforeLoadingAccountConfig() throws Exception {
         String old = System.getProperty("multiclouddb.config");
-        try {
+        PrintStream originalError = System.err;
+        var output = new ByteArrayOutputStream();
+        try (var capture = new PrintStream(output, true, StandardCharsets.UTF_8)) {
+            System.setErr(capture);
             System.setProperty("multiclouddb.config", directory.resolve("absent.properties").toString());
-            assertEquals(0, new ComplexPojoSample().run(new String[]{"preview"}));
+            assertEquals(1, new ComplexPojoSample().run(new String[0]));
+            assertEquals(1, new ComplexPojoSample().run(new String[]{"preview"}));
         } finally {
+            System.setErr(originalError);
             if (old == null) {
                 System.clearProperty("multiclouddb.config");
             } else {
                 System.setProperty("multiclouddb.config", old);
             }
         }
+        assertEquals(2, output.toString(StandardCharsets.UTF_8).lines()
+                .filter(line -> line.equals("FAIL configuration: Usage: live <cosmos|dynamo> --allow-live")).count());
     }
 
     private Path write(String content) throws Exception {

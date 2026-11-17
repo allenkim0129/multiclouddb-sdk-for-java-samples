@@ -89,9 +89,8 @@ try {
     }
     $evidence | Set-Content -Encoding UTF8 'target/serialization-build-evidence.txt'
 
-    $jar = Join-Path $Root 'target/multiclouddb-samples-1.0.0-SNAPSHOT-jar-with-dependencies.jar'
-    Invoke-Checked 'java' @('-cp', $jar, 'com.multiclouddb.samples.serialization.ComplexPojoSample', 'preview')
     Write-Host 'Built and checked offline. No live account was accessed.'
+    Write-Host 'Run the live sample separately after configuring your test target: live cosmos --allow-live (or live dynamo --allow-live).'
     Write-Host 'Evidence: target/serialization-build-evidence.txt and target/serialization-dependencies.txt'
 } finally {
     Pop-Location

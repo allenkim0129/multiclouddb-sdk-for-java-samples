@@ -1,9 +1,10 @@
-# Complex POJO serialization: preview and live accounts
+# Complex POJO serialization: live accounts
 
 This is customer code for evaluating the **existing** Map-based public API in
 [microsoft/multiclouddb-sdk-for-java#122](https://github.com/microsoft/multiclouddb-sdk-for-java/pull/122).
 It does not change the SDK, promise a new numeric contract, or implement partial updates.
-Only synthetic orders are used. **No live operation runs by default.**
+Only synthetic orders are used. **The app is live-only and requires an explicit
+provider, test target and `--allow-live`. Building does not run the live app.**
 
 **App name:** Complex POJO Serialization. **Main class:**
 [`com.multiclouddb.samples.serialization.ComplexPojoSample`](src/serialization/java/com/multiclouddb/samples/serialization/ComplexPojoSample.java).
@@ -19,8 +20,9 @@ The `public static void main(String[] args)` method is in
 | [ComplexPojoSample.java](src/serialization/java/com/multiclouddb/samples/serialization/ComplexPojoSample.java) | Jackson `ObjectMapper` setup, direct `convertValue` calls, public SDK calls in `exercise`, diagnostics, comparison and cleanup |
 | [LiveSettings.java](src/serialization/java/com/multiclouddb/samples/serialization/LiveSettings.java) | External properties loading, primary-key configuration, live opt-in and legacy environment compatibility |
 
-Short walkthrough: run **preview**, follow one original order into `MAPPER.convertValue`,
-and compare its Map/types and restored POJO to the JSON fixture. Then read `exercise`
+Short walkthrough: configure your live test target, follow one original order into
+`MAPPER.convertValue`, and compare its returned Map/types and restored POJO to the
+JSON fixture. Read `exercise`
 as customer code: explicit `create`, optional missing-read/conflict/invalid-input
 examples, `read`, replacement `update`, full `upsert`, partition-scoped `query`,
 and owned-key cleanup. `errorSummary`/`diagnosticsSummary` are in that same file,
@@ -83,9 +85,9 @@ It reads the actual versions from the pinned SDK POM:
 | Spanner provider (existing samples' compilation/runtime dependency only) | `0.1.0-beta.1-SNAPSHOT` |
 | Parent POM | `1-SNAPSHOT` |
 
-It builds installed **JAR/POM artifacts**, compiles all samples, runs offline tests,
-creates the executable fat JAR using the existing service-merging configuration, and
-runs preview. It checks SHA256 equality of SDK build JARs, installed JARs, and sample-resolved
+It builds installed **JAR/POM artifacts**, compiles all samples, runs offline unit tests,
+and creates the executable fat JAR using the existing service-merging configuration.
+It does not launch the live app. It checks SHA256 equality of SDK build JARs, installed JARs, and sample-resolved
 JARs, plus installed flattened POMs. Evidence is written to
 `target/serialization-build-evidence.txt`; the complete dependency mediation tree is
 `target/serialization-dependencies.txt`. No SDK source/test directory is put on the
@@ -116,19 +118,22 @@ Map-to-JSON conversions preserve the existing applications' JSON interfaces. Two
 profile-selected `CursorSerialization` helpers adapt the incompatible released/PR cursor
 signatures without reflective fallbacks. Always clean when switching profiles.
 
-## Preview: no account required
+## Run the live sample
+
+First configure your test account using the Cosmos or DynamoDB instructions below.
+Then run from the repository root (Cosmos example):
 
 ```powershell
 $jar = 'target\multiclouddb-samples-1.0.0-SNAPSHOT-jar-with-dependencies.jar'
 $main = 'com.multiclouddb.samples.serialization.ComplexPojoSample'
-java -cp $jar $main preview
+java -cp $jar $main live cosmos --allow-live
 $LASTEXITCODE
 ```
 
-No arguments also means preview. It prints each original POJO, expected JSON,
-converted Map, leaf runtime types, restored POJO, exact differences, and PASS/FAIL.
-Preview does **not even construct an SDK client**. Exit 0 means the configured
-customer conversion checks passed, **not** that a cloud provider preserves the data.
+The app prints the original POJO, expected JSON, outgoing and returned Maps,
+leaf runtime types, restored POJO, exact differences, and PASS/FAIL.
+There is no preview mode. Missing arguments fail with usage instead of connecting.
+The build's offline unit tests remain separate from this live workflow.
 
 `ComplexPojoSample.java` configures one Jackson `ObjectMapper` at the top of the
 class: `JavaTimeModule` handles Java dates, ISO strings replace date timestamps,
@@ -258,8 +263,7 @@ properties path for Cosmos, then legacy environment settings if no file is selec
 A selected file supplies **all** target/key values; it never merges stale environment
 credentials. Missing/unreadable/invalid selected files or missing keys fail closed;
 no silent environment/identity fallback. The file workflow supports Cosmos; Dynamo
-continues using its documented environment/credential-chain setup. Preview never
-reads the account config, even when `-Dmulticlouddb.config` is set.
+continues using its documented environment/credential-chain setup.
 
 Remove any old `MCDB_COSMOS_KEY` environment value if you used the previous setup:
 `Remove-Item Env:MCDB_COSMOS_KEY -ErrorAction SilentlyContinue`. This does not erase
@@ -502,7 +506,7 @@ in orchestration unit tests use an explicitly labeled in-memory test double:
 **they do not validate native mapping or live storage**. A separate offline cursor
 round-trip checks the directly required migration of existing change-feed samples.
 
-Observed offline results: the Jackson preview and twenty-four JUnit tests
+Observed offline results: twenty-three JUnit tests
 passed on JDK 17; the original released-SDK profile also compiled. The PowerShell
 script was executed end to end using PowerShell on Linux, including the installed/
 resolved artifact hash checks. Native Windows execution has not been performed.

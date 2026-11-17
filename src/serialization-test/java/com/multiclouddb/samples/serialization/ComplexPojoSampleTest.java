@@ -16,11 +16,8 @@ import com.multiclouddb.api.QueryRequest;
 import com.multiclouddb.api.ResourceAddress;
 import org.junit.jupiter.api.Test;
 
-import java.io.ByteArrayOutputStream;
-import java.io.PrintStream;
 import java.lang.reflect.Proxy;
 import java.math.BigDecimal;
-import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -35,21 +32,6 @@ import static com.multiclouddb.samples.serialization.ComplexPojoSample.MAP_TYPE;
 import static org.junit.jupiter.api.Assertions.*;
 
 class ComplexPojoSampleTest {
-    @Test
-    void previewRunsOneComplexOrderWithJackson() throws Exception {
-        PrintStream original = System.out;
-        var output = new ByteArrayOutputStream();
-        try (var capture = new PrintStream(output, true, StandardCharsets.UTF_8)) {
-            System.setOut(capture);
-            assertEquals(0, new ComplexPojoSample().run(new String[]{"preview"}));
-        } finally {
-            System.setOut(original);
-        }
-        String text = output.toString(StandardCharsets.UTF_8);
-        assertEquals(List.of("PREVIEW jackson/baseline"),
-                text.lines().filter(line -> line.startsWith("PREVIEW ")).toList());
-    }
-
     @Test
     void ordinaryNumbersSurviveUntypedJsonReadbackWithoutRelaxingComparisons() throws Exception {
         var untyped = new ObjectMapper();
@@ -105,25 +87,22 @@ class ComplexPojoSampleTest {
 
     @Test
     void liveRequiresExactOptInAndExplicitTargets() {
-        assertTrue(LiveSettings.preview(new String[0]));
-        assertTrue(LiveSettings.preview(new String[]{"preview"}));
-        assertFalse(LiveSettings.preview(new String[]{"live", "cosmos", "--allow-live"}));
-        assertFalse(LiveSettings.preview(new String[]{"live", "dynamo", "--allow-live"}));
-        assertThrows(IllegalArgumentException.class, () ->
-                LiveSettings.preview(new String[]{"live", "cosmos", "--allow-live", "--include-numeric-limits"}));
-        assertThrows(IllegalArgumentException.class, () ->
-                LiveSettings.preview(new String[]{"preview", "--include-numeric-limits"}));
-        assertThrows(IllegalArgumentException.class, () ->
-                LiveSettings.preview(new String[]{"preview", "--unknown"}));
-        assertThrows(IllegalArgumentException.class, () -> LiveSettings.preview(new String[]{"cosmos"}));
-        assertThrows(IllegalArgumentException.class, () -> LiveSettings.preview(new String[]{"live", "cosmos"}));
-        assertThrows(IllegalArgumentException.class, () ->
-                LiveSettings.preview(new String[]{"live", "spanner", "--allow-live"}));
+        for (String[] invalid : List.of(
+                new String[0], new String[]{"preview"}, new String[]{"cosmos"},
+                new String[]{"live", "cosmos"},
+                new String[]{"live", "spanner", "--allow-live"},
+                new String[]{"live", "cosmos", "--allow-live", "--unknown"})) {
+            var failure = assertThrows(IllegalArgumentException.class, () -> LiveSettings.load(invalid, Map.of()));
+            assertEquals("Usage: live <cosmos|dynamo> --allow-live", failure.getMessage());
+        }
         String[] args = {"live", "cosmos", "--allow-live"};
         assertThrows(IllegalArgumentException.class, () -> LiveSettings.load(args, Map.of()));
         var env = new HashMap<>(Map.of("MCDB_DATABASE", "sandbox", "MCDB_COLLECTION", "orders",
                 "MCDB_RUN_PREFIX", "test", "MCDB_COSMOS_ENDPOINT", "https://example.documents.azure.com/"));
         assertTrue(LiveSettings.load(args, env).config().auth().isEmpty());
+        env.put("MCDB_AWS_REGION", "us-east-1");
+        assertEquals(ProviderId.DYNAMO,
+                LiveSettings.load(new String[]{"live", "dynamo", "--allow-live"}, env).provider());
         env.put("MCDB_COSMOS_ENDPOINT", "https://user:secret@example.com/");
         assertThrows(IllegalArgumentException.class, () -> LiveSettings.load(args, env));
         env.put("MCDB_COSMOS_ENDPOINT", "https://example.documents.azure.com/");
