@@ -11,6 +11,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 
+/** Sample assertions/display only, not an SDK adapter or a required customer serialization layer. */
 final class ExpectedDocuments {
     private static final Set<String> PROVIDER_FIELDS =
             Set.of("id", "partitionKey", "sortKey", "_rid", "_self", "_etag", "_attachments", "_ts");
@@ -18,6 +19,7 @@ final class ExpectedDocuments {
     private ExpectedDocuments() { }
 
     static Map<String, Object> load(String runId, int revision) throws IOException {
+        // Hand-authored expectations avoid comparing a returned document only against itself.
         try (var input = ExpectedDocuments.class.getResourceAsStream("/fixtures/baseline.json")) {
             if (input == null) {
                 throw new IOException("Missing expected fixture: baseline.json");
@@ -31,6 +33,7 @@ final class ExpectedDocuments {
     }
 
     static Map<String, Object> payload(Map<String, Object> returned) {
+        // Copy before removing root metadata; retain unexpected fields and nested business IDs.
         Map<String, Object> result = new LinkedHashMap<>(returned);
         PROVIDER_FIELDS.forEach(result::remove);
         return result;
@@ -44,6 +47,7 @@ final class ExpectedDocuments {
 
     private static void compare(String path, Object expected, Object actual, List<String> errors) {
         if (expected instanceof Map<?, ?> left && actual instanceof Map<?, ?> right) {
+            // Comparing key sets separately distinguishes a missing property from an explicit null.
             if (!left.keySet().equals(right.keySet())) {
                 errors.add(path + " keys expected=" + left.keySet() + " actual=" + right.keySet());
             }

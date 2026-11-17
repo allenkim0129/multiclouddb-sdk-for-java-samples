@@ -9,7 +9,11 @@ import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
 
-/** Application-owned POJOs: no SDK or serializer annotations. */
+/**
+ * Application-owned data model: no SDK or serializer annotations.
+ * Records generate constructors, accessors (such as order.customer()), and value equality.
+ * Fields cannot be reassigned, but referenced lists/maps are not automatically immutable.
+ */
 public record Order(
         String orderId, String runId, int revision, Status status, Customer customer,
         List<LineItem> items, Map<String, String> labels, Map<String, Object> optionalFields,

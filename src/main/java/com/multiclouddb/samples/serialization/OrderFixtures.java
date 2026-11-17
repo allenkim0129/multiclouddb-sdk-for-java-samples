@@ -10,7 +10,10 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
-/** Edit these synthetic inputs and the independent expected JSON together. */
+/**
+ * Visible synthetic input for the walkthrough; edit alongside resources/fixtures/baseline.json.
+ * runId isolates each execution; revision identifies the create/update/upsert version being read.
+ */
 public final class OrderFixtures {
     private OrderFixtures() { }
 
@@ -18,6 +21,7 @@ public final class OrderFixtures {
         long sequence = 12345L;
         BigDecimal total = new BigDecimal("125.50");
         BigInteger externalNumber = new BigInteger("42");
+        // Map.of rejects null values; this map intentionally tests an explicit JSON null.
         Map<String, Object> optionalFields = new LinkedHashMap<>();
         optionalFields.put("giftMessage", null);
         // "coupon" is deliberately absent; null and missing are checked separately.
