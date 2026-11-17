@@ -17,10 +17,10 @@ final class ExpectedDocuments {
 
     private ExpectedDocuments() { }
 
-    static Map<String, Object> load(String scenario, String runId, int revision) throws IOException {
-        try (var input = ExpectedDocuments.class.getResourceAsStream("/fixtures/" + scenario + ".json")) {
+    static Map<String, Object> load(String runId, int revision) throws IOException {
+        try (var input = ExpectedDocuments.class.getResourceAsStream("/fixtures/baseline.json")) {
             if (input == null) {
-                throw new IOException("Missing expected fixture: " + scenario);
+                throw new IOException("Missing expected fixture: baseline.json");
             }
             Map<String, Object> expected = CustomerSerializers.jackson()
                     .readValue(input, CustomerSerializers.MAP_TYPE);
@@ -62,7 +62,7 @@ final class ExpectedDocuments {
         } else if (expected instanceof Number left && actual instanceof Number right) {
             // Exact decimal comparison, never a double conversion or epsilon.
             if (new BigDecimal(left.toString()).compareTo(new BigDecimal(right.toString())) != 0) {
-                errors.add(path + " precision/value mismatch expected=" + left + " actual=" + right);
+                errors.add(path + " value mismatch expected=" + left + " actual=" + right);
             }
         } else if (!Objects.equals(expected, actual)) {
             errors.add(path + " expected=" + expected + " actual=" + actual);

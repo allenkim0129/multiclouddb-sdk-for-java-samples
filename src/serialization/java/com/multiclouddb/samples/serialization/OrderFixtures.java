@@ -12,36 +12,22 @@ import java.util.Map;
 
 /** Edit these synthetic inputs and the independent expected JSON together. */
 public final class OrderFixtures {
-    public static final List<String> CASES = List.of("baseline", "precision", "large-integer");
-
     private OrderFixtures() { }
 
-    public static List<String> selectedCases(boolean includeNumericLimits) {
-        return includeNumericLimits ? CASES : List.of("baseline");
-    }
-
-    public static Order create(String scenario, String runId, int revision) {
-        if (!CASES.contains(scenario)) {
-            throw new IllegalArgumentException("Unknown fixture");
-        }
-        long sequence = switch (scenario) {
-            case "precision" -> 9007199254740993L;
-            case "large-integer" -> 9007199254740991L;
-            default -> 12345L;
-        };
-        BigDecimal total = new BigDecimal(scenario.equals("precision") ? "12345.67890123456789" : "125.50");
-        BigInteger externalNumber = new BigInteger(
-                scenario.equals("large-integer") ? "18446744073709551617" : "42");
+    public static Order create(String runId, int revision) {
+        long sequence = 12345L;
+        BigDecimal total = new BigDecimal("125.50");
+        BigInteger externalNumber = new BigInteger("42");
         Map<String, Object> optionalFields = new LinkedHashMap<>();
         optionalFields.put("giftMessage", null);
         // "coupon" is deliberately absent; null and missing are checked separately.
-        return new Order("synthetic-order-" + scenario, runId, revision, Order.Status.NEW,
+        return new Order("synthetic-order-baseline", runId, revision, Order.Status.NEW,
                 new Order.Customer("Synthetic Customer",
                         new Order.Address("Example City", "00123")),
                 List.of(new Order.LineItem("SYNTHETIC-A", 2, new BigDecimal("50.25"), List.of("demo", "fragile")),
                         new Order.LineItem("SYNTHETIC-B", 1, new BigDecimal("25.00"), List.of())),
                 Map.of("channel", "sample", "region", "test"), optionalFields,
                 Instant.parse("2026-01-02T03:04:05.123456789Z"), LocalDate.parse("2026-01-05"),
-                null, sequence, externalNumber, total, Long.toString(sequence), total.toPlainString());
+                null, sequence, externalNumber, total);
     }
 }

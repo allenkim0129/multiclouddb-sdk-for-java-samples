@@ -14,8 +14,7 @@ public record Order(
         String orderId, String runId, int revision, Status status, Customer customer,
         List<LineItem> items, Map<String, String> labels, Map<String, Object> optionalFields,
         Instant placedAt, LocalDate deliveryDate, String note,
-        long sequence, BigInteger externalNumber, BigDecimal total,
-        String exactSequenceText, String exactTotalText) {
+        long sequence, BigInteger externalNumber, BigDecimal total) {
     public enum Status { NEW, PAID }
     public record Customer(String name, Address address) { }
     public record Address(String city, String postalCode) { }

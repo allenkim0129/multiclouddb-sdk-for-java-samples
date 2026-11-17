@@ -3,8 +3,6 @@
 package com.multiclouddb.samples.serialization;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.google.gson.Gson;
 import com.google.gson.JsonParseException;
 import com.multiclouddb.api.DocumentResult;
 import com.multiclouddb.api.MulticloudDbClient;
@@ -63,26 +61,17 @@ public final class ComplexPojoSample {
         }
         System.out.println("Expected SDK SHA (use the pinned build script): " + SDK_SHA);
         System.out.println("SDK loaded from: " + MulticloudDbClient.class.getProtectionDomain().getCodeSource().getLocation());
-        boolean includeNumericLimits = LiveSettings.includeNumericLimits(args);
-        List<String> scenarios = OrderFixtures.selectedCases(includeNumericLimits);
-        System.out.println(includeNumericLimits
-                ? "Including numeric-limit probes; precision/readback failures remain FAIL results."
-                : "Complex POJO focus: baseline with both serializers."
-                        + " SKIP numeric-limit probes (precision, large-integer); opt in with --include-numeric-limits.");
         if (preview) {
-            defaultsProbe(includeNumericLimits);
             for (var codec : CustomerSerializers.configured()) {
-                for (String scenario : scenarios) {
-                    Order original = OrderFixtures.create(scenario, "preview", 1);
-                    Map<String, Object> expected = ExpectedDocuments.load(scenario, "preview", 1);
-                    System.out.println("\nPREVIEW " + codec.name() + "/" + scenario);
-                    System.out.println("Original POJO: " + original);
-                    show("Independent expected JSON", expected);
-                    Map<String, Object> document = codec.toDocument(original);
-                    show("Customer serializer -> Map", document);
-                    check("POJO -> Map", expected, document);
-                    restore(codec, expected, document);
-                }
+                Order original = OrderFixtures.create("preview", 1);
+                Map<String, Object> expected = ExpectedDocuments.load("preview", 1);
+                System.out.println("\nPREVIEW " + codec.name() + "/baseline");
+                System.out.println("Original POJO: " + original);
+                show("Independent expected JSON", expected);
+                Map<String, Object> document = codec.toDocument(original);
+                show("Customer serializer -> Map", document);
+                check("POJO -> Map", expected, document);
+                restore(codec, expected, document);
             }
             System.out.println("OFFLINE ONLY: no SDK writes/reads/queries or cloud connections were performed.");
         } else {
@@ -94,9 +83,7 @@ public final class ComplexPojoSample {
             MulticloudDbClient client = MulticloudDbClientFactory.create(settings.config());
             try {
                 for (var codec : CustomerSerializers.configured()) {
-                    for (String scenario : scenarios) {
-                        exercise(client, settings.address(), codec, scenario, runId);
-                    }
+                    exercise(client, settings.address(), codec, runId);
                 }
             } finally {
                 closeClient(client);
@@ -119,15 +106,15 @@ public final class ComplexPojoSample {
     }
 
     void exercise(MulticloudDbClient client, ResourceAddress address, CustomerSerializers.Codec codec,
-                  String scenario, String runId) throws IOException, InterruptedException {
-        MulticloudDbKey key = MulticloudDbKey.of(runId, codec.name() + "-" + scenario);
+                  String runId) throws IOException, InterruptedException {
+        MulticloudDbKey key = MulticloudDbKey.of(runId, codec.name() + "-baseline");
         boolean created = false;
         String step = "prepare";
-        System.out.println("\nLIVE " + codec.name() + "/" + scenario
+        System.out.println("\nLIVE " + codec.name() + "/baseline"
                 + " partitionKey=" + key.partitionKey() + " sortKey/id=" + key.sortKey());
         try {
-            Order original = OrderFixtures.create(scenario, runId, 1);
-            Map<String, Object> expected = ExpectedDocuments.load(scenario, runId, 1);
+            Order original = OrderFixtures.create(runId, 1);
+            Map<String, Object> expected = ExpectedDocuments.load(runId, 1);
             System.out.println("Original POJO: " + original);
             show("Independent expected JSON", expected);
             Map<String, Object> document = codec.toDocument(original);
@@ -139,10 +126,8 @@ public final class ComplexPojoSample {
             client.create(address, key, document);
             created = true;
             System.out.println("PASS create");
-            if (scenario.equals("baseline")) {
-                step = "representative failure handling";
-                demonstrateFailureHandling(client, address, key, document);
-            }
+            step = "representative failure handling";
+            demonstrateFailureHandling(client, address, key, document);
             step = "read after create";
             Map<String, Object> returned = awaitRead(client, address, key, 1);
             show("SDK read Map (including provider fields)", returned);
@@ -161,11 +146,11 @@ public final class ComplexPojoSample {
                     replacement, ExpectedDocuments.payload(afterUpdate));
 
             step = "upsert";
-            Order restoredOrder = OrderFixtures.create(scenario, runId, 3);
+            Order restoredOrder = OrderFixtures.create(runId, 3);
             Map<String, Object> upsertDocument = codec.toDocument(restoredOrder);
             show("upsert input: complete POJO mapped again", upsertDocument);
             client.upsert(address, key, upsertDocument);
-            expected = ExpectedDocuments.load(scenario, runId, 3);
+            expected = ExpectedDocuments.load(runId, 3);
             Map<String, Object> afterUpsert = awaitRead(client, address, key, 3);
             show("SDK read after upsert", afterUpsert);
             check("upsert vs independent expected", expected, ExpectedDocuments.payload(afterUpsert));
@@ -325,33 +310,6 @@ public final class ComplexPojoSample {
         System.out.println(label + ":\n" + CustomerSerializers.jackson()
                 .writerWithDefaultPrettyPrinter().writeValueAsString(map));
         ExpectedDocuments.printTypes("$", map);
-    }
-
-    private static void defaultsProbe(boolean includeNumericLimits) throws JsonProcessingException {
-        Order order = OrderFixtures.create("baseline", "preview", 1);
-        System.out.println("\nDEFAULTS PROBE (observations, not configured round-trip passes)");
-        try {
-            new ObjectMapper().convertValue(order, CustomerSerializers.MAP_TYPE);
-            System.out.println("DEFAULT Jackson unexpectedly accepted java.time; inspect dependency/configuration");
-        } catch (IllegalArgumentException unsupported) {
-            System.out.println("DEFAULT Jackson: java.time mapping fails without JavaTimeModule");
-        }
-        try {
-            new Gson().toJson(order);
-            System.out.println("DEFAULT Gson accepted java.time on this runtime; inspect its representation");
-        } catch (JsonParseException unsupported) {
-            System.out.println("DEFAULT Gson: java.time reflective mapping fails on Java 17; explicit adapters needed");
-        }
-        if (includeNumericLimits) {
-            String json = "{\"sequence\":9007199254740993,\"total\":12345.67890123456789,\"note\":null}";
-            Map<String, Object> defaults = CustomerSerializers.defaultGsonNumbers(json);
-            show("DEFAULT Gson untyped numeric map (Double)", defaults);
-            Map<String, Object> exact = CustomerSerializers.jackson().readValue(json, CustomerSerializers.MAP_TYPE);
-            ExpectedDocuments.differences(exact, defaults).forEach(diff -> System.out.println("LIMITATION " + diff));
-        }
-        System.out.println("DEFAULT Gson omits null POJO fields. Configured codecs preserve them explicitly.");
-        System.out.println("CONFIGURED: Jackson JavaTimeModule + ISO dates + BigDecimal floats;"
-                + " Gson ISO adapters + serializeNulls + BIG_DECIMAL untyped numbers.");
     }
 
     private static void safeError(String step, Exception failure) {

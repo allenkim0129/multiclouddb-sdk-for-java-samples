@@ -15,7 +15,5 @@
   "note": null,
   "sequence": 12345,
   "externalNumber": 42,
-  "total": 125.50,
-  "exactSequenceText": "12345",
-  "exactTotalText": "125.50"
+  "total": 125.50
 }

@@ -86,8 +86,4 @@ public final class CustomerSerializers {
             }
         });
     }
-
-    public static Map<String, Object> defaultGsonNumbers(String json) {
-        return new Gson().fromJson(json, GSON_MAP_TYPE);
-    }
 }

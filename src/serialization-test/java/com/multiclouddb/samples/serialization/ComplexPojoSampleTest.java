@@ -33,41 +33,28 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class ComplexPojoSampleTest {
     @Test
-    void defaultPreviewSkipsNumericLimitsAndExplicitOptInIncludesThem() throws Exception {
+    void previewRunsOneComplexOrderWithBothSerializers() throws Exception {
         PrintStream original = System.out;
-        try {
-            for (boolean include : List.of(false, true)) {
-                var output = new ByteArrayOutputStream();
-                try (var capture = new PrintStream(output, true, StandardCharsets.UTF_8)) {
-                    System.setOut(capture);
-                    String[] args = include ? new String[]{"preview", "--include-numeric-limits"}
-                            : new String[]{"preview"};
-                    assertEquals(0, new ComplexPojoSample().run(args));
-                } finally {
-                    System.setOut(original);
-                }
-                String text = output.toString(StandardCharsets.UTF_8);
-                for (String codec : List.of("jackson", "gson")) {
-                    assertTrue(text.contains("PREVIEW " + codec + "/baseline"));
-                    assertEquals(include, text.contains("PREVIEW " + codec + "/precision"));
-                    assertEquals(include, text.contains("PREVIEW " + codec + "/large-integer"));
-                }
-                assertEquals(include ? 6 : 2, text.lines().filter(line -> line.startsWith("PREVIEW ")).count());
-                assertEquals(!include, text.contains("SKIP numeric-limit probes"));
-            }
+        var output = new ByteArrayOutputStream();
+        try (var capture = new PrintStream(output, true, StandardCharsets.UTF_8)) {
+            System.setOut(capture);
+            assertEquals(0, new ComplexPojoSample().run(new String[]{"preview"}));
         } finally {
             System.setOut(original);
         }
+        String text = output.toString(StandardCharsets.UTF_8);
+        assertEquals(List.of("PREVIEW jackson/baseline", "PREVIEW gson/baseline"),
+                text.lines().filter(line -> line.startsWith("PREVIEW ")).toList());
     }
 
     @Test
     void ordinaryNumbersSurviveUntypedJsonReadbackWithoutRelaxingComparisons() throws Exception {
         var untyped = new com.fasterxml.jackson.databind.ObjectMapper();
         for (var codec : CustomerSerializers.configured()) {
-            Order input = OrderFixtures.create("baseline", "unit-test", 1);
+            Order input = OrderFixtures.create("unit-test", 1);
             Map<String, Object> returned = untyped.readValue(
                     untyped.writeValueAsString(codec.toDocument(input)), CustomerSerializers.MAP_TYPE);
-            Map<String, Object> expected = ExpectedDocuments.load("baseline", "unit-test", 1);
+            Map<String, Object> expected = ExpectedDocuments.load("unit-test", 1);
             assertEquals(List.of(), ExpectedDocuments.differences(expected, returned));
             assertEquals(List.of(), ExpectedDocuments.differences(
                     expected, codec.toDocument(codec.fromDocument(returned))));
@@ -77,31 +64,25 @@ class ComplexPojoSampleTest {
     }
 
     @Test
-    void configuredCodecsMatchIndependentFixturesAndRestoreJavaTypes() throws Exception {
+    void configuredCodecsMatchIndependentFixtureAndRestoreJavaTypes() throws Exception {
         for (var codec : CustomerSerializers.configured()) {
-            for (String scenario : OrderFixtures.CASES) {
-                Order input = OrderFixtures.create(scenario, "unit-test", 1);
-                Map<String, Object> expected = ExpectedDocuments.load(scenario, "unit-test", 1);
-                Map<String, Object> document = codec.toDocument(input);
-                assertEquals(List.of(), ExpectedDocuments.differences(expected, document), codec.name() + scenario);
-                Order restored = codec.fromDocument(document);
-                assertEquals(input, restored, codec.name() + scenario);
-                assertTrue(document.containsKey("note"));
-                assertNull(document.get("note"));
-                assertTrue(restored.optionalFields().containsKey("giftMessage"));
-                assertFalse(restored.optionalFields().containsKey("coupon"));
-            }
+            Order input = OrderFixtures.create("unit-test", 1);
+            Map<String, Object> expected = ExpectedDocuments.load("unit-test", 1);
+            Map<String, Object> document = codec.toDocument(input);
+            assertEquals(List.of(), ExpectedDocuments.differences(expected, document), codec.name());
+            Order restored = codec.fromDocument(document);
+            assertEquals(input, restored, codec.name());
+            assertTrue(document.containsKey("note"));
+            assertNull(document.get("note"));
+            assertTrue(restored.optionalFields().containsKey("giftMessage"));
+            assertFalse(restored.optionalFields().containsKey("coupon"));
         }
     }
 
     @Test
-    void comparatorDetectsDefaultGsonPrecisionLossAndMissingVersusNull() {
-        var defaults = CustomerSerializers.defaultGsonNumbers(
-                "{\"sequence\":9007199254740993,\"total\":12345.67890123456789}");
-        var differences = ExpectedDocuments.differences(Map.of(
-                "sequence", 9007199254740993L, "total", new BigDecimal("12345.67890123456789")), defaults);
-        assertEquals(2, differences.size());
-        assertTrue(differences.stream().allMatch(value -> value.contains("precision/value mismatch")));
+    void comparatorDistinguishesValueChangesAndMissingVersusNull() {
+        assertTrue(ExpectedDocuments.differences(new BigDecimal("125.50"), 125.5).isEmpty());
+        assertFalse(ExpectedDocuments.differences(new BigDecimal("125.50"), 125.0).isEmpty());
         Map<String, Object> nullable = new LinkedHashMap<>();
         nullable.put("note", null);
         assertFalse(ExpectedDocuments.differences(nullable, Map.of()).isEmpty());
@@ -111,7 +92,7 @@ class ComplexPojoSampleTest {
 
     @Test
     void providerFieldsAreRemovedOnlyAtRootAndUnexpectedApplicationFieldsStillFail() throws Exception {
-        Map<String, Object> expected = ExpectedDocuments.load("baseline", "test", 1);
+        Map<String, Object> expected = ExpectedDocuments.load("test", 1);
         Map<String, Object> returned = new LinkedHashMap<>(expected);
         returned.put("id", "case");
         returned.put("partitionKey", "test");
@@ -127,13 +108,12 @@ class ComplexPojoSampleTest {
     void liveRequiresExactOptInAndExplicitTargets() {
         assertTrue(LiveSettings.preview(new String[0]));
         assertTrue(LiveSettings.preview(new String[]{"preview"}));
-        assertTrue(LiveSettings.preview(new String[]{"preview", "--include-numeric-limits"}));
-        assertFalse(LiveSettings.preview(new String[]{"live", "cosmos", "--allow-live", "--include-numeric-limits"}));
-        assertFalse(LiveSettings.preview(new String[]{"live", "dynamo", "--allow-live", "--include-numeric-limits"}));
+        assertFalse(LiveSettings.preview(new String[]{"live", "cosmos", "--allow-live"}));
+        assertFalse(LiveSettings.preview(new String[]{"live", "dynamo", "--allow-live"}));
         assertThrows(IllegalArgumentException.class, () ->
-                LiveSettings.preview(new String[]{"live", "cosmos", "--include-numeric-limits"}));
+                LiveSettings.preview(new String[]{"live", "cosmos", "--allow-live", "--include-numeric-limits"}));
         assertThrows(IllegalArgumentException.class, () ->
-                LiveSettings.preview(new String[]{"--include-numeric-limits"}));
+                LiveSettings.preview(new String[]{"preview", "--include-numeric-limits"}));
         assertThrows(IllegalArgumentException.class, () ->
                 LiveSettings.preview(new String[]{"preview", "--unknown"}));
         assertThrows(IllegalArgumentException.class, () -> LiveSettings.preview(new String[]{"cosmos"}));
@@ -200,7 +180,7 @@ class ComplexPojoSampleTest {
             }
         });
         new ComplexPojoSample().exercise(client, new ResourceAddress("db", "orders"),
-                CustomerSerializers.configured().get(0), "baseline", "own-run");
+                CustomerSerializers.configured().get(0), "own-run");
         assertEquals(List.of("create", "read", "create", "create", "read",
                 "update", "read", "upsert", "read", "query", "delete", "read"), operations);
         assertEquals(Map.of(unrelated, Map.of("business", "untouched")), store);
@@ -216,12 +196,12 @@ class ComplexPojoSampleTest {
                     throw new IllegalStateException("Simulated unconfirmed write");
                 }
                 if (method.equals("read") && operations.size() == 2) {
-                    throw new NumberFormatException("Simulated provider numeric readback failure");
+                    throw new IllegalStateException("Simulated read failure");
                 }
                 return null;
             });
             new ComplexPojoSample().exercise(client, new ResourceAddress("db", "orders"),
-                    CustomerSerializers.configured().get(0), "large-integer", "own-run");
+                    CustomerSerializers.configured().get(0), "own-run");
             assertEquals(createSucceeds ? List.of("create", "read", "delete", "read") : List.of("create"), operations);
         }
     }
