@@ -13,9 +13,9 @@
   "placedAt": "2026-01-02T03:04:05.123456789Z",
   "deliveryDate": "2026-01-05",
   "note": null,
-  "sequence": 9007199254740991,
+  "sequence": 12345,
   "externalNumber": 42,
   "total": 125.50,
-  "exactSequenceText": "9007199254740991",
+  "exactSequenceText": "12345",
   "exactTotalText": "125.50"
 }

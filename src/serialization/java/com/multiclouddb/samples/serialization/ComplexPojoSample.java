@@ -63,10 +63,16 @@ public final class ComplexPojoSample {
         }
         System.out.println("Expected SDK SHA (use the pinned build script): " + SDK_SHA);
         System.out.println("SDK loaded from: " + MulticloudDbClient.class.getProtectionDomain().getCodeSource().getLocation());
+        boolean includeNumericLimits = LiveSettings.includeNumericLimits(args);
+        List<String> scenarios = OrderFixtures.selectedCases(includeNumericLimits);
+        System.out.println(includeNumericLimits
+                ? "Including numeric-limit probes; precision/readback failures remain FAIL results."
+                : "Complex POJO focus: baseline with both serializers."
+                        + " SKIP numeric-limit probes (precision, large-integer); opt in with --include-numeric-limits.");
         if (preview) {
-            defaultsProbe();
+            defaultsProbe(includeNumericLimits);
             for (var codec : CustomerSerializers.configured()) {
-                for (String scenario : OrderFixtures.CASES) {
+                for (String scenario : scenarios) {
                     Order original = OrderFixtures.create(scenario, "preview", 1);
                     Map<String, Object> expected = ExpectedDocuments.load(scenario, "preview", 1);
                     System.out.println("\nPREVIEW " + codec.name() + "/" + scenario);
@@ -88,7 +94,7 @@ public final class ComplexPojoSample {
             MulticloudDbClient client = MulticloudDbClientFactory.create(settings.config());
             try {
                 for (var codec : CustomerSerializers.configured()) {
-                    for (String scenario : OrderFixtures.CASES) {
+                    for (String scenario : scenarios) {
                         exercise(client, settings.address(), codec, scenario, runId);
                     }
                 }
@@ -321,8 +327,8 @@ public final class ComplexPojoSample {
         ExpectedDocuments.printTypes("$", map);
     }
 
-    private static void defaultsProbe() throws JsonProcessingException {
-        Order order = OrderFixtures.create("precision", "preview", 1);
+    private static void defaultsProbe(boolean includeNumericLimits) throws JsonProcessingException {
+        Order order = OrderFixtures.create("baseline", "preview", 1);
         System.out.println("\nDEFAULTS PROBE (observations, not configured round-trip passes)");
         try {
             new ObjectMapper().convertValue(order, CustomerSerializers.MAP_TYPE);
@@ -336,11 +342,13 @@ public final class ComplexPojoSample {
         } catch (JsonParseException unsupported) {
             System.out.println("DEFAULT Gson: java.time reflective mapping fails on Java 17; explicit adapters needed");
         }
-        String json = "{\"sequence\":9007199254740993,\"total\":12345.67890123456789,\"note\":null}";
-        Map<String, Object> defaults = CustomerSerializers.defaultGsonNumbers(json);
-        show("DEFAULT Gson untyped numeric map (Double)", defaults);
-        Map<String, Object> exact = CustomerSerializers.jackson().readValue(json, CustomerSerializers.MAP_TYPE);
-        ExpectedDocuments.differences(exact, defaults).forEach(diff -> System.out.println("LIMITATION " + diff));
+        if (includeNumericLimits) {
+            String json = "{\"sequence\":9007199254740993,\"total\":12345.67890123456789,\"note\":null}";
+            Map<String, Object> defaults = CustomerSerializers.defaultGsonNumbers(json);
+            show("DEFAULT Gson untyped numeric map (Double)", defaults);
+            Map<String, Object> exact = CustomerSerializers.jackson().readValue(json, CustomerSerializers.MAP_TYPE);
+            ExpectedDocuments.differences(exact, defaults).forEach(diff -> System.out.println("LIMITATION " + diff));
+        }
         System.out.println("DEFAULT Gson omits null POJO fields. Configured codecs preserve them explicitly.");
         System.out.println("CONFIGURED: Jackson JavaTimeModule + ISO dates + BigDecimal floats;"
                 + " Gson ISO adapters + serializeNulls + BIG_DECIMAL untyped numbers.");

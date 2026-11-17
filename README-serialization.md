@@ -45,13 +45,23 @@ remain separate decisions.
 | `java/com/multiclouddb/samples/serialization/CustomerSerializers.java` | Customer-owned Jackson/Gson conversion settings |
 | `java/com/multiclouddb/samples/serialization/ComplexPojoSample.java` | Public SDK create/read/update/upsert/query/delete workflow |
 
-Both serializers use the same three fixtures (six cases). Each contains a nested
+The default run uses the **baseline fixture with both serializers (two cases)**.
+The purpose is complex POJO mapping and public SDK CRUD/query, not numeric-limit
+evaluation. Each contains a nested
 customer/address, `List<LineItem>`, string and nullable Maps, enum, nanosecond
 `Instant`, `LocalDate`, null `note`/`giftMessage`, deliberately **absent** `coupon`,
 an empty list, `long`, `BigInteger`, and `BigDecimal`. Baseline numeric values are
-`9007199254740991`, `42`, and `125.50`. The precision case uses
+`12345`, `42`, and `125.50`; line-item prices are `50.25` and `25.00`.
+These modest values avoid deliberately stressing numeric boundaries while retaining
+the POJO's `long`, `BigInteger`, and `BigDecimal` fields.
+
+The optional precision case uses
 `9007199254740993` and `12345.67890123456789`; the large-integer case uses
-`18446744073709551617`. These risk cases deliberately exceed safe portable assumptions.
+`18446744073709551617`. These risk cases deliberately exceed safe portable assumptions
+and are **skipped by default**, pending separate numeric-contract follow-up work.
+Append `--include-numeric-limits` to preview or live commands to run all three
+fixtures with both serializers (six cases). Skipped probes are reported explicitly;
+they are not counted as passes. Assertions for executed cases are never suppressed.
 
 `exactSequenceText` and `exactTotalText` show an **explicit alternative representation**,
 not an automatic repair of the numeric fields. String storage changes numeric query,
@@ -137,6 +147,15 @@ converted Map, leaf runtime types, restored POJO, exact differences, and PASS/FA
 Preview does **not even construct an SDK client**. Exit 0 means the configured
 customer conversion checks passed, **not** that a cloud provider preserves the data.
 
+Optional numeric-limit evaluation (not needed for the complex POJO walkthrough):
+
+```powershell
+java -cp $jar $main preview --include-numeric-limits
+# Only when intentionally evaluating numeric limits against your live test target:
+java -cp $jar $main live cosmos --allow-live --include-numeric-limits
+# The same trailing flag is supported for live dynamo.
+```
+
 The separate defaults probe explains why the configured mapping is necessary:
 
 - Plain Jackson does not handle `java.time` without `JavaTimeModule`. The configured
@@ -144,7 +163,7 @@ The separate defaults probe explains why the configured mapping is necessary:
 - Plain Gson's reflective `java.time` handling fails on Java 17. The configured
   Gson supplies ISO adapters, preserves null fields with `serializeNulls()`, and uses
   `ToNumberPolicy.BIG_DECIMAL` for untyped Map numbers.
-- Default Gson untyped numeric parsing uses `Double`: the displayed large-long and
+- With `--include-numeric-limits`, the default Gson numeric probe uses `Double`: the displayed large-long and
   decimal comparisons expose precision loss **before the SDK is called**.
 
 No blanket stringify/normalization, floating-point tolerance, or automatic fallback
@@ -327,7 +346,7 @@ Native conversion failures (including large-integer readback) remain FAIL result
 the next case runs after cleanup.
 
 Exit **0** means all executed checks passed. Exit **1** means at least one operation,
-comparison, or cleanup failed. Numeric risk cases may fail on the pinned providers;
+comparison, or cleanup failed. Opt-in numeric risk cases may fail on the pinned providers;
 that is useful evaluation evidence, not a reason to coerce the inputs or call the
 whole experiment successful. A conversion/read exception stops that case's later
 steps, so do not infer those steps ran from the overall command completing.
@@ -336,8 +355,9 @@ After each **confirmed successful create**, `finally` deletes only its exact
 partitionKey + sortKey/id and checks for absence. A conflict or otherwise
 unconfirmed create is never blindly deleted. Ambiguous writes, failed cleanup,
 Ctrl+C, process termination, or machine loss can leave data. Save the printed
-run ID and exact six candidate keys (`jackson-`/`gson-` followed by `baseline`,
-`precision`, or `large-integer`). In the portal/your own tooling inspect only those
+run ID and exact candidate keys: `jackson-baseline` and `gson-baseline` by default;
+with numeric probes enabled, also `jackson-`/`gson-` followed by `precision` or
+`large-integer`. In the portal/your own tooling inspect only those
 exact keys and delete documents you confirm belong to that run. Never delete all
 documents by a shared prefix, the container, database, or table as cleanup.
 
@@ -397,7 +417,7 @@ resource tree, restoring both apps' HTML without packaging account configs.
 
 | Surface | Executed verification | Still not verified |
 | --- | --- | --- |
-| Complex POJO | Offline: six configured preview cases, exact fixtures; fake orchestration, failure branches and diagnostics redaction tests | Native Cosmos/Dynamo errors, storage precision, query diagnostics and cleanup against live targets |
+| Complex POJO | Offline: two default preview cases, six with numeric probes enabled, exact fixtures; fake orchestration, failure branches and diagnostics redaction tests | Native Cosmos/Dynamo errors, query diagnostics and cleanup against live targets; numeric limits evaluated separately |
 | Risk Platform | Local HTTP + fake SDK: tenant create/read/list, portfolio/position creation and partition query, dashboard AUM/open-alert aggregation, read-merge-upsert alert acknowledgement preserving fields, missing 404 and injected SDK-error 500, static HTML response | Native provider mapping, complete demo seeding, browser JavaScript/visual UX, emulator/live E2E |
 | TODO | Local HTTP + fake SDK: create/read/list, read-merge-upsert preserving title/date, delete, missing 404, SDK category in the existing 500 response, static HTML response | Native persistence/query behavior, browser interaction, concurrent updates, emulator/live E2E |
 | Change Feed | Offline public cursor serialization/resume callback round-trip and malformed-token exception; synthetic nested Map/null/empty payload rendering through the actual watcher formatter | Hydrated native cursors, feed delivery/order, consumer-thread error handling, retention/AVAD, emulator/live E2E |
@@ -492,7 +512,7 @@ live account and is intentionally not part of this offline/local verification.
 
 - Follow a visible POJO through customer Map conversion, each public CRUD/query call, and POJO restoration against independent expected data.
 - Review required setup/boilerplate and failure-path code in the five linked files; note unclear ownership or surprising defaults.
-- Inspect numeric precision, dates, null versus missing, and large integers; do not accept coercion as a hidden fix.
+- Inspect nested objects/lists/maps, enums, dates, and null versus missing. Numeric-limit probes are opt-in follow-up work; do not accept coercion as a hidden fix.
 - Confirm replacement `update` versus app-side read/merge/upsert, including concurrency limitations.
 - Review null returns, expected categories, unexpected exceptions, retry hints, and whether an exceptionless alternative is worth future investigation.
 - Use only available diagnostics to trace a problem; record missing request/status information without dumping native text or tokens.
@@ -507,7 +527,7 @@ in orchestration unit tests use an explicitly labeled in-memory test double:
 **they do not validate native mapping or live storage**. A separate offline cursor
 round-trip checks the directly required migration of existing change-feed samples.
 
-Observed offline results: all six configured preview cases and twenty-two JUnit tests
+Observed offline results: both default preview cases, all six opt-in cases and twenty-four JUnit tests
 passed on JDK 17; the original released-SDK profile also compiled. The PowerShell
 script was executed end to end using PowerShell on Linux, including the installed/
 resolved artifact hash checks. Native Windows execution has not been performed.

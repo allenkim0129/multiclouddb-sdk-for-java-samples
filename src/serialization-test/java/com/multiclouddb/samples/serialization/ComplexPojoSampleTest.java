@@ -15,8 +15,11 @@ import com.multiclouddb.api.QueryRequest;
 import com.multiclouddb.api.ResourceAddress;
 import org.junit.jupiter.api.Test;
 
+import java.io.ByteArrayOutputStream;
+import java.io.PrintStream;
 import java.lang.reflect.Proxy;
 import java.math.BigDecimal;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -29,6 +32,50 @@ import java.util.concurrent.atomic.AtomicInteger;
 import static org.junit.jupiter.api.Assertions.*;
 
 class ComplexPojoSampleTest {
+    @Test
+    void defaultPreviewSkipsNumericLimitsAndExplicitOptInIncludesThem() throws Exception {
+        PrintStream original = System.out;
+        try {
+            for (boolean include : List.of(false, true)) {
+                var output = new ByteArrayOutputStream();
+                try (var capture = new PrintStream(output, true, StandardCharsets.UTF_8)) {
+                    System.setOut(capture);
+                    String[] args = include ? new String[]{"preview", "--include-numeric-limits"}
+                            : new String[]{"preview"};
+                    assertEquals(0, new ComplexPojoSample().run(args));
+                } finally {
+                    System.setOut(original);
+                }
+                String text = output.toString(StandardCharsets.UTF_8);
+                for (String codec : List.of("jackson", "gson")) {
+                    assertTrue(text.contains("PREVIEW " + codec + "/baseline"));
+                    assertEquals(include, text.contains("PREVIEW " + codec + "/precision"));
+                    assertEquals(include, text.contains("PREVIEW " + codec + "/large-integer"));
+                }
+                assertEquals(include ? 6 : 2, text.lines().filter(line -> line.startsWith("PREVIEW ")).count());
+                assertEquals(!include, text.contains("SKIP numeric-limit probes"));
+            }
+        } finally {
+            System.setOut(original);
+        }
+    }
+
+    @Test
+    void ordinaryNumbersSurviveUntypedJsonReadbackWithoutRelaxingComparisons() throws Exception {
+        var untyped = new com.fasterxml.jackson.databind.ObjectMapper();
+        for (var codec : CustomerSerializers.configured()) {
+            Order input = OrderFixtures.create("baseline", "unit-test", 1);
+            Map<String, Object> returned = untyped.readValue(
+                    untyped.writeValueAsString(codec.toDocument(input)), CustomerSerializers.MAP_TYPE);
+            Map<String, Object> expected = ExpectedDocuments.load("baseline", "unit-test", 1);
+            assertEquals(List.of(), ExpectedDocuments.differences(expected, returned));
+            assertEquals(List.of(), ExpectedDocuments.differences(
+                    expected, codec.toDocument(codec.fromDocument(returned))));
+            returned.put("sequence", input.sequence() + 1);
+            assertFalse(ExpectedDocuments.differences(expected, returned).isEmpty());
+        }
+    }
+
     @Test
     void configuredCodecsMatchIndependentFixturesAndRestoreJavaTypes() throws Exception {
         for (var codec : CustomerSerializers.configured()) {
@@ -80,6 +127,15 @@ class ComplexPojoSampleTest {
     void liveRequiresExactOptInAndExplicitTargets() {
         assertTrue(LiveSettings.preview(new String[0]));
         assertTrue(LiveSettings.preview(new String[]{"preview"}));
+        assertTrue(LiveSettings.preview(new String[]{"preview", "--include-numeric-limits"}));
+        assertFalse(LiveSettings.preview(new String[]{"live", "cosmos", "--allow-live", "--include-numeric-limits"}));
+        assertFalse(LiveSettings.preview(new String[]{"live", "dynamo", "--allow-live", "--include-numeric-limits"}));
+        assertThrows(IllegalArgumentException.class, () ->
+                LiveSettings.preview(new String[]{"live", "cosmos", "--include-numeric-limits"}));
+        assertThrows(IllegalArgumentException.class, () ->
+                LiveSettings.preview(new String[]{"--include-numeric-limits"}));
+        assertThrows(IllegalArgumentException.class, () ->
+                LiveSettings.preview(new String[]{"preview", "--unknown"}));
         assertThrows(IllegalArgumentException.class, () -> LiveSettings.preview(new String[]{"cosmos"}));
         assertThrows(IllegalArgumentException.class, () -> LiveSettings.preview(new String[]{"live", "cosmos"}));
         assertThrows(IllegalArgumentException.class, () ->

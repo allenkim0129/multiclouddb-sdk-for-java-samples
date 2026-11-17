@@ -16,11 +16,19 @@ public final class OrderFixtures {
 
     private OrderFixtures() { }
 
+    public static List<String> selectedCases(boolean includeNumericLimits) {
+        return includeNumericLimits ? CASES : List.of("baseline");
+    }
+
     public static Order create(String scenario, String runId, int revision) {
         if (!CASES.contains(scenario)) {
             throw new IllegalArgumentException("Unknown fixture");
         }
-        long sequence = scenario.equals("precision") ? 9007199254740993L : 9007199254740991L;
+        long sequence = switch (scenario) {
+            case "precision" -> 9007199254740993L;
+            case "large-integer" -> 9007199254740991L;
+            default -> 12345L;
+        };
         BigDecimal total = new BigDecimal(scenario.equals("precision") ? "12345.67890123456789" : "125.50");
         BigInteger externalNumber = new BigInteger(
                 scenario.equals("large-integer") ? "18446744073709551617" : "42");

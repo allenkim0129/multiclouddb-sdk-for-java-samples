@@ -21,6 +21,12 @@ record LiveSettings(ProviderId provider, ResourceAddress address,
             Path.of("src/main/resources/serialization-cosmos-cloud.properties");
 
     static boolean preview(String[] args) {
+        if (includeNumericLimits(args)) {
+            args = Arrays.copyOf(args, args.length - 1);
+            if (args.length == 0) {
+                throw new IllegalArgumentException("Specify preview or live before --include-numeric-limits");
+            }
+        }
         if (args.length == 0 || Arrays.equals(args, new String[]{"preview"})) {
             return true;
         }
@@ -28,9 +34,14 @@ record LiveSettings(ProviderId provider, ResourceAddress address,
                 || !(args[1].equals("cosmos") || args[1].equals("dynamo"))
                 || !args[2].equals("--allow-live")) {
             throw new IllegalArgumentException(
-                    "Usage: preview | live <cosmos|dynamo> --allow-live");
+                    "Usage: preview [--include-numeric-limits]"
+                            + " | live <cosmos|dynamo> --allow-live [--include-numeric-limits]");
         }
         return false;
+    }
+
+    static boolean includeNumericLimits(String[] args) {
+        return args.length > 0 && args[args.length - 1].equals("--include-numeric-limits");
     }
 
     static LiveSettings load(String[] args, Map<String, String> env) {
