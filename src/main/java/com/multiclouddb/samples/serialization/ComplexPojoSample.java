@@ -28,7 +28,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
-/** Live Cosmos/Dynamo sample; requires an explicit target and --allow-live. */
+/** Live Cosmos/Dynamo sample; requires an explicit provider and configured test target. */
 public final class ComplexPojoSample {
     public static final String SDK_SHA = "ef339fb6529a1b367987bff0b4884c4127708fd9";
     static final ObjectMapper MAPPER = new ObjectMapper()
@@ -59,9 +59,8 @@ public final class ComplexPojoSample {
     }
 
     int run(String[] args) throws IOException, InterruptedException {
-        if (args.length != 2 || !(args[0].equals("cosmos") || args[0].equals("dynamo"))
-                || !args[1].equals("--allow-live")) {
-            System.err.println("FAIL configuration: Usage: <cosmos|dynamo> --allow-live");
+        if (args.length != 1 || !(args[0].equals("cosmos") || args[0].equals("dynamo"))) {
+            System.err.println("FAIL configuration: Usage: <cosmos|dynamo>");
             return 1;
         }
         ConfigLoader.AppConfig appConfig;

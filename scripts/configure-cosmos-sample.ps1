@@ -15,7 +15,7 @@ function Show-ConfigLocation {
     Write-Host 'The shared ConfigLoader reads this file from the runtime classpath; no az login is needed.'
     Write-Host 'Keep the JAR first, then add src/main/resources to the classpath (Windows: -cp "$jar;src/main/resources").'
     Write-Host 'To select a different config, set -Dmulticlouddb.config to its resource name, not a filesystem path.'
-    Write-Host 'No cloud connection or test was started. Run the sample separately with cosmos --allow-live.'
+    Write-Host 'No cloud connection or test was started. Run the sample separately with cosmos.'
 }
 
 function ConvertTo-PropertyValue {

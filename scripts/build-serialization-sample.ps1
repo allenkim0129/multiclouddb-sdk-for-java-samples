@@ -90,7 +90,7 @@ try {
     $evidence | Set-Content -Encoding UTF8 'target/serialization-build-evidence.txt'
 
     Write-Host 'Built and checked offline. No live account was accessed.'
-    Write-Host 'Run the live sample separately after configuring your test target: cosmos --allow-live (or dynamo --allow-live).'
+    Write-Host 'Run the live sample separately after configuring your test target: cosmos (or dynamo).'
     Write-Host 'Evidence: target/serialization-build-evidence.txt and target/serialization-dependencies.txt'
 } finally {
     Pop-Location

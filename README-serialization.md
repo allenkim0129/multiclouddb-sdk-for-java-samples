@@ -4,7 +4,8 @@ This is customer code for evaluating the **existing** Map-based public API in
 [microsoft/multiclouddb-sdk-for-java#122](https://github.com/microsoft/multiclouddb-sdk-for-java/pull/122).
 It does not change the SDK, promise a new numeric contract, or implement partial updates.
 Only synthetic orders are used. **The app is live-only and requires an explicit
-provider, test target and `--allow-live`. Building does not run the live app.**
+provider and configured test target. Running it performs real database operations
+without an additional confirmation flag. Building does not run the live app.**
 
 **App name:** Complex POJO Serialization. **Main class:**
 [`com.multiclouddb.samples.serialization.ComplexPojoSample`](src/main/java/com/multiclouddb/samples/serialization/ComplexPojoSample.java).
@@ -135,7 +136,7 @@ Then run from the repository root (Cosmos example):
 $jar = 'target\multiclouddb-samples-1.0.0-SNAPSHOT-jar-with-dependencies.jar'
 $main = 'com.multiclouddb.samples.serialization.ComplexPojoSample'
 $cp = "$jar;src/main/resources"
-java -cp $cp $main cosmos --allow-live
+java -cp $cp $main cosmos
 $LASTEXITCODE
 ```
 
@@ -256,7 +257,7 @@ Run from the repository root:
 $jar = 'target\multiclouddb-samples-1.0.0-SNAPSHOT-jar-with-dependencies.jar'
 $main = 'com.multiclouddb.samples.serialization.ComplexPojoSample'
 $cp = "$jar;src/main/resources"
-java -cp $cp $main cosmos --allow-live
+java -cp $cp $main cosmos
 $LASTEXITCODE
 ```
 
@@ -264,7 +265,7 @@ To select another properties resource in that directory:
 
 ```powershell
 java "-Dmulticlouddb.config=serialization-other-cloud.properties" `
-    -cp $cp $main cosmos --allow-live
+    -cp $cp $main cosmos
 ```
 
 `multiclouddb.config` is now a **classpath resource name**, just like the other apps,
@@ -324,7 +325,7 @@ $env:AWS_SESSION_TOKEN = $session.SessionToken
 $session = $null
 # Existing physical table: your-test-db__your-test-orders
 try {
-    java -cp $cp $main dynamo --allow-live
+    java -cp $cp $main dynamo
     $result = $LASTEXITCODE
 } finally {
     Remove-Item Env:AWS_ACCESS_KEY_ID, Env:AWS_SECRET_ACCESS_KEY, Env:AWS_SESSION_TOKEN -ErrorAction SilentlyContinue
@@ -451,7 +452,7 @@ real, storage is not. All test HTTP servers are stopped in `finally`.
 
 Use only a **disposable local emulator** that you deliberately started. The legacy
 apps' `main` methods auto-provision and/or seed fixed demo targets; they **do not
-inherit the POJO sample's live opt-in/owned-key safety**. Do not point these commands
+inherit the POJO sample's owned-key cleanup safeguards**. Do not point these commands
 at cloud accounts or shared production data. Account/permissions/cost approval
 is still required before any later live experiment.
 
@@ -532,7 +533,7 @@ live account and is intentionally not part of this offline/local verification.
 ## Evidence and limits
 
 The offline suite checks Jackson mapping against the independent fixture, missing/null
-and value mismatch detection, explicit live opt-in, target validation, bounded
+and value mismatch detection, provider argument and target validation, bounded
 partition query pagination, and cleanup ownership/failure paths. Public SDK calls
 in orchestration unit tests use an explicitly labeled in-memory test double:
 **they do not validate native mapping or live storage**. A separate offline cursor
