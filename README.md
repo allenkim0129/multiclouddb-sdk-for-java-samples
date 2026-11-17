@@ -6,7 +6,7 @@ Each sample runs against **Azure Cosmos DB**, **Amazon DynamoDB**, or **Google C
 | Sample | Description | Port | Guide |
 |--------|-------------|------|-------|
 | **Portable CRUD + Query** | Minimal end-to-end CRUD and query sample | — | [below](#portable-crud--query-sample) |
-| **Complex POJO serialization** | Visible Jackson/Gson inputs, offline preview, opt-in live Cosmos/Dynamo CRUD + query against pinned SDK PR | — | [README-serialization.md](README-serialization.md) |
+| **Complex POJO serialization** | Direct Jackson mapping, visible inputs, offline preview, opt-in live Cosmos/Dynamo CRUD + query against pinned SDK PR | — | [README-serialization.md](README-serialization.md) |
 | **Change Feed (one-shot)** | Writer + consumer demo showing CREATE / UPDATE / DELETE events | — | [below](#change-feed-samples) |
 | **Change Feed Watcher** | Long-running consumer that prints events as you add/edit/delete items in the portal | — | [below](#change-feed-samples) |
 | **Risk Analysis Platform** | Multi-tenant portfolio risk analytics with executive dashboard | `8090` | [README-risk-platform.md](README-risk-platform.md) |

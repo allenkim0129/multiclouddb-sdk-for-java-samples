@@ -2,6 +2,7 @@
 // Licensed under the MIT License.
 package com.multiclouddb.samples.serialization;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.multiclouddb.api.DocumentResult;
 import com.multiclouddb.api.MulticloudDbClient;
 import com.multiclouddb.api.MulticloudDbError;
@@ -29,11 +30,13 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import static com.multiclouddb.samples.serialization.ComplexPojoSample.MAPPER;
+import static com.multiclouddb.samples.serialization.ComplexPojoSample.MAP_TYPE;
 import static org.junit.jupiter.api.Assertions.*;
 
 class ComplexPojoSampleTest {
     @Test
-    void previewRunsOneComplexOrderWithBothSerializers() throws Exception {
+    void previewRunsOneComplexOrderWithJackson() throws Exception {
         PrintStream original = System.out;
         var output = new ByteArrayOutputStream();
         try (var capture = new PrintStream(output, true, StandardCharsets.UTF_8)) {
@@ -43,40 +46,36 @@ class ComplexPojoSampleTest {
             System.setOut(original);
         }
         String text = output.toString(StandardCharsets.UTF_8);
-        assertEquals(List.of("PREVIEW jackson/baseline", "PREVIEW gson/baseline"),
+        assertEquals(List.of("PREVIEW jackson/baseline"),
                 text.lines().filter(line -> line.startsWith("PREVIEW ")).toList());
     }
 
     @Test
     void ordinaryNumbersSurviveUntypedJsonReadbackWithoutRelaxingComparisons() throws Exception {
-        var untyped = new com.fasterxml.jackson.databind.ObjectMapper();
-        for (var codec : CustomerSerializers.configured()) {
-            Order input = OrderFixtures.create("unit-test", 1);
-            Map<String, Object> returned = untyped.readValue(
-                    untyped.writeValueAsString(codec.toDocument(input)), CustomerSerializers.MAP_TYPE);
-            Map<String, Object> expected = ExpectedDocuments.load("unit-test", 1);
-            assertEquals(List.of(), ExpectedDocuments.differences(expected, returned));
-            assertEquals(List.of(), ExpectedDocuments.differences(
-                    expected, codec.toDocument(codec.fromDocument(returned))));
-            returned.put("sequence", input.sequence() + 1);
-            assertFalse(ExpectedDocuments.differences(expected, returned).isEmpty());
-        }
+        var untyped = new ObjectMapper();
+        Order input = OrderFixtures.create("unit-test", 1);
+        Map<String, Object> returned = untyped.readValue(
+                untyped.writeValueAsString(MAPPER.convertValue(input, MAP_TYPE)), MAP_TYPE);
+        Map<String, Object> expected = ExpectedDocuments.load("unit-test", 1);
+        assertEquals(List.of(), ExpectedDocuments.differences(expected, returned));
+        Order restored = MAPPER.convertValue(returned, Order.class);
+        assertEquals(List.of(), ExpectedDocuments.differences(expected, MAPPER.convertValue(restored, MAP_TYPE)));
+        returned.put("sequence", input.sequence() + 1);
+        assertFalse(ExpectedDocuments.differences(expected, returned).isEmpty());
     }
 
     @Test
-    void configuredCodecsMatchIndependentFixtureAndRestoreJavaTypes() throws Exception {
-        for (var codec : CustomerSerializers.configured()) {
-            Order input = OrderFixtures.create("unit-test", 1);
-            Map<String, Object> expected = ExpectedDocuments.load("unit-test", 1);
-            Map<String, Object> document = codec.toDocument(input);
-            assertEquals(List.of(), ExpectedDocuments.differences(expected, document), codec.name());
-            Order restored = codec.fromDocument(document);
-            assertEquals(input, restored, codec.name());
-            assertTrue(document.containsKey("note"));
-            assertNull(document.get("note"));
-            assertTrue(restored.optionalFields().containsKey("giftMessage"));
-            assertFalse(restored.optionalFields().containsKey("coupon"));
-        }
+    void jacksonMatchesIndependentFixtureAndRestoresJavaTypes() throws Exception {
+        Order input = OrderFixtures.create("unit-test", 1);
+        Map<String, Object> expected = ExpectedDocuments.load("unit-test", 1);
+        Map<String, Object> document = MAPPER.convertValue(input, MAP_TYPE);
+        assertEquals(List.of(), ExpectedDocuments.differences(expected, document));
+        Order restored = MAPPER.convertValue(document, Order.class);
+        assertEquals(input, restored);
+        assertTrue(document.containsKey("note"));
+        assertNull(document.get("note"));
+        assertTrue(restored.optionalFields().containsKey("giftMessage"));
+        assertFalse(restored.optionalFields().containsKey("coupon"));
     }
 
     @Test
@@ -159,8 +158,7 @@ class ComplexPojoSampleTest {
                     if (method.equals("create") && store.containsKey(key)) {
                         throw failure(MulticloudDbErrorCategory.CONFLICT, 400);
                     }
-                    Map<String, Object> document = CustomerSerializers.jackson()
-                            .convertValue(args[2], CustomerSerializers.MAP_TYPE);
+                    Map<String, Object> document = MAPPER.convertValue(args[2], MAP_TYPE);
                     if (method.equals("update")) {
                         assertFalse(document.containsKey("customer"));
                     }
@@ -179,8 +177,7 @@ class ComplexPojoSampleTest {
                 default -> throw new AssertionError("Unexpected SDK call " + method);
             }
         });
-        new ComplexPojoSample().exercise(client, new ResourceAddress("db", "orders"),
-                CustomerSerializers.configured().get(0), "own-run");
+        new ComplexPojoSample().exercise(client, new ResourceAddress("db", "orders"), "own-run");
         assertEquals(List.of("create", "read", "create", "create", "read",
                 "update", "read", "upsert", "read", "query", "delete", "read"), operations);
         assertEquals(Map.of(unrelated, Map.of("business", "untouched")), store);
@@ -200,8 +197,7 @@ class ComplexPojoSampleTest {
                 }
                 return null;
             });
-            new ComplexPojoSample().exercise(client, new ResourceAddress("db", "orders"),
-                    CustomerSerializers.configured().get(0), "own-run");
+            new ComplexPojoSample().exercise(client, new ResourceAddress("db", "orders"), "own-run");
             assertEquals(createSucceeds ? List.of("create", "read", "delete", "read") : List.of("create"), operations);
         }
     }

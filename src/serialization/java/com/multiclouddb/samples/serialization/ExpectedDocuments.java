@@ -22,8 +22,8 @@ final class ExpectedDocuments {
             if (input == null) {
                 throw new IOException("Missing expected fixture: baseline.json");
             }
-            Map<String, Object> expected = CustomerSerializers.jackson()
-                    .readValue(input, CustomerSerializers.MAP_TYPE);
+            Map<String, Object> expected = ComplexPojoSample.MAPPER
+                    .readValue(input, ComplexPojoSample.MAP_TYPE);
             expected.put("runId", runId);
             expected.put("revision", revision);
             return expected;

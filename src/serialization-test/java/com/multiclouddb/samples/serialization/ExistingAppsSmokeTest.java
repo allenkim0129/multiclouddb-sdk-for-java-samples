@@ -2,6 +2,7 @@
 // Licensed under the MIT License.
 package com.multiclouddb.samples.serialization;
 
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.multiclouddb.api.DocumentResult;
@@ -203,7 +204,7 @@ class ExistingAppsSmokeTest {
         }
 
         private static Map<String, Object> copy(Object document) {
-            return new LinkedHashMap<>(MAPPER.convertValue(document, CustomerSerializers.MAP_TYPE));
+            return new LinkedHashMap<>(MAPPER.convertValue(document, new TypeReference<Map<String, Object>>() { }));
         }
     }
 }

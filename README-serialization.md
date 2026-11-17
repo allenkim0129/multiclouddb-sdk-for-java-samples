@@ -10,17 +10,16 @@ Only synthetic orders are used. **No live operation runs by default.**
 The `public static void main(String[] args)` method is in
 `src/serialization/java/com/multiclouddb/samples/serialization/ComplexPojoSample.java`.
 
-## Team review: start with these five customer files
+## Team review: start with these four customer files
 
 | Read in order | Review focus |
 | --- | --- |
 | [Order.java](src/serialization/java/com/multiclouddb/samples/serialization/Order.java) | What the application owns: nested POJOs and Java field types |
 | [OrderFixtures.java](src/serialization/java/com/multiclouddb/samples/serialization/OrderFixtures.java) | Visible synthetic inputs; compare with the [independent JSON fixtures](src/serialization/resources/fixtures) |
-| [CustomerSerializers.java](src/serialization/java/com/multiclouddb/samples/serialization/CustomerSerializers.java) | Actual Jackson/Gson settings, POJO -> Map and Map -> POJO conversion |
+| [ComplexPojoSample.java](src/serialization/java/com/multiclouddb/samples/serialization/ComplexPojoSample.java) | Jackson `ObjectMapper` setup, direct `convertValue` calls, public SDK calls in `exercise`, diagnostics, comparison and cleanup |
 | [LiveSettings.java](src/serialization/java/com/multiclouddb/samples/serialization/LiveSettings.java) | External properties loading, primary-key configuration, live opt-in and legacy environment compatibility |
-| [ComplexPojoSample.java](src/serialization/java/com/multiclouddb/samples/serialization/ComplexPojoSample.java) | Actual SDK calls in `exercise`, catches/branching in `demonstrateFailureHandling`, diagnostics getters, comparison and cleanup |
 
-Short walkthrough: run **preview**, follow one original order into `toDocument`,
+Short walkthrough: run **preview**, follow one original order into `MAPPER.convertValue`,
 and compare its Map/types and restored POJO to the JSON fixture. Then read `exercise`
 as customer code: explicit `create`, optional missing-read/conflict/invalid-input
 examples, `read`, replacement `update`, full `upsert`, partition-scoped `query`,
@@ -40,18 +39,17 @@ remain separate decisions.
 | `java/com/multiclouddb/samples/serialization/Order.java` | Application POJOs (Java 17 records): order, customer/address, line items and enum |
 | `java/com/multiclouddb/samples/serialization/OrderFixtures.java` | Explicit constructors and numeric/date literals; edit inputs here |
 | `resources/fixtures/baseline.json` | Independent, visible expected document for the ordinary case |
-| `java/com/multiclouddb/samples/serialization/CustomerSerializers.java` | Customer-owned Jackson/Gson conversion settings |
-| `java/com/multiclouddb/samples/serialization/ComplexPojoSample.java` | Public SDK create/read/update/upsert/query/delete workflow |
+| `java/com/multiclouddb/samples/serialization/ComplexPojoSample.java` | Direct Jackson mapping and public SDK create/read/update/upsert/query/delete workflow |
 
-The sample uses **one complex order fixture with both serializers (two runs)**.
+The sample uses **one complex order fixture with Jackson (one run)**.
 The purpose is complex POJO mapping and public SDK CRUD/query. The order contains a nested
 customer/address, `List<LineItem>`, string and nullable Maps, enum, nanosecond
 `Instant`, `LocalDate`, null `note`/`giftMessage`, deliberately **absent** `coupon`,
 an empty list, `long`, `BigInteger`, and `BigDecimal`. Baseline numeric values are
 `12345`, `42`, and `125.50`; line-item prices are `50.25` and `25.00`.
-`OrderFixtures.create(runId, revision)` constructs the same visible order for each
-serializer. There are no scenario selectors, numeric-limit probes, or numeric
-string-workaround fields.
+`OrderFixtures.create(runId, revision)` constructs the visible order.
+There are no serializer interfaces/factories, scenario selectors, numeric-limit
+probes, or numeric string-workaround fields.
 
 Expected JSON is hand-authored, not generated from the outgoing Map or returned POJO.
 Only runtime `runId` and workflow `revision` are substituted. Edit both constructor
@@ -97,8 +95,7 @@ does **not** establish provenance.
 The profile aligns Cosmos to the PR's **4.82.0** (rather than the sample default
 4.81.0), keeps AWS **2.34.0**, and aligns Jackson components using the **2.18.9 BOM**
 to match the pinned SDK's Azure dependencies rather than downgrading them to the
-sample default 2.18.6. Gson is **2.15.0**, matching the pinned Spanner provider's
-dependency so the customer serializer does not downgrade that runtime either.
+sample default 2.18.6.
 No SDK shading or relocation changes are made.
 
 For subsequent edits to **sample code only**, rebuild with the same isolated repository:
@@ -133,13 +130,20 @@ converted Map, leaf runtime types, restored POJO, exact differences, and PASS/FA
 Preview does **not even construct an SDK client**. Exit 0 means the configured
 customer conversion checks passed, **not** that a cloud provider preserves the data.
 
-`CustomerSerializers.java` contains the explicit mapping configuration:
+`ComplexPojoSample.java` configures one Jackson `ObjectMapper` at the top of the
+class: `JavaTimeModule` handles Java dates, ISO strings replace date timestamps,
+and untyped decimal values use `BigDecimal`. Null fields retain Jackson's default
+inclusion behavior. Mapping uses Jackson directly, beside the SDK calls:
 
-- Plain Jackson does not handle `java.time` without `JavaTimeModule`. The configured
-  mapper emits ISO strings and reads untyped decimal values as `BigDecimal`.
-- Plain Gson's reflective `java.time` handling fails on Java 17. The configured
-  Gson supplies ISO adapters, preserves null fields with `serializeNulls()`, and uses
-  `ToNumberPolicy.BIG_DECIMAL` for untyped Map numbers.
+```java
+Map<String, Object> document = MAPPER.convertValue(original, MAP_TYPE);
+client.create(address, key, document);
+// After reading and removing provider-owned fields:
+Order restored = MAPPER.convertValue(payload, Order.class);
+```
+
+`MAP_TYPE` is a Jackson `TypeReference<Map<String, Object>>`, not an SDK type.
+There is no custom `Codec`, `toDocument`, or `fromDocument` layer.
 
 Comparisons remain strict: there is no blanket stringify/normalization,
 floating-point tolerance, or automatic fallback. The comparator accepts numerically equivalent
@@ -298,12 +302,12 @@ environment.
 
 ## Read results and clean up
 
-For each configured serializer, the sample calls the public SDK:
+The sample calls the public SDK:
 **create -> read -> update -> read -> upsert -> read -> query -> delete**.
 It prints outgoing and returned Maps/types plus restored POJOs and compares reads,
 queries, and restored objects to independent expected data.
 
-For each serializer, additional failure probes run after the
+Additional failure probes run after the
 confirmed create, using the same owned key or a read-only `-never-created` key.
 They do not provision resources or write a separate failure-test document.
 
@@ -317,19 +321,19 @@ excluded from POJO comparison; unexpected application fields still fail.
 Reads retry only missing/stale revision visibility, at most five attempts with
 250 ms intervals. Query follows continuation tokens, at most ten pages per attempt
 and five attempts. Value differences are **not retried away or excused**.
-Native conversion failures remain FAIL results; the next serializer runs after cleanup.
+Native conversion failures remain FAIL results, and cleanup is still attempted for a confirmed create.
 
 Exit **0** means all executed checks passed. Exit **1** means at least one operation,
-comparison, or cleanup failed. A conversion/read exception stops that serializer's later
+comparison, or cleanup failed. A conversion/read exception stops the workflow's later
 steps, so do not infer those steps ran from the overall command completing.
 
 After each **confirmed successful create**, `finally` deletes only its exact
 partitionKey + sortKey/id and checks for absence. A conflict or otherwise
 unconfirmed create is never blindly deleted. Ambiguous writes, failed cleanup,
 Ctrl+C, process termination, or machine loss can leave data. Save the printed
-run ID and exact candidate keys: `jackson-baseline` and `gson-baseline`.
-In the portal/your own tooling inspect only those
-exact keys and delete documents you confirm belong to that run. Never delete all
+run ID and exact candidate key: `jackson-baseline`.
+In the portal/your own tooling inspect only that
+exact key and delete a document you confirm belongs to that run. Never delete all
 documents by a shared prefix, the container, database, or table as cleanup.
 
 ## Failures and diagnostics: current public contract
@@ -388,7 +392,7 @@ resource tree, restoring both apps' HTML without packaging account configs.
 
 | Surface | Executed verification | Still not verified |
 | --- | --- | --- |
-| Complex POJO | Offline: one fixture through both serializers, exact comparisons; fake orchestration, failure branches and diagnostics redaction tests | Native Cosmos/Dynamo errors, query diagnostics and cleanup against live targets |
+| Complex POJO | Offline: one fixture through Jackson, exact comparisons; fake orchestration, failure branches and diagnostics redaction tests | Native Cosmos/Dynamo errors, query diagnostics and cleanup against live targets |
 | Risk Platform | Local HTTP + fake SDK: tenant create/read/list, portfolio/position creation and partition query, dashboard AUM/open-alert aggregation, read-merge-upsert alert acknowledgement preserving fields, missing 404 and injected SDK-error 500, static HTML response | Native provider mapping, complete demo seeding, browser JavaScript/visual UX, emulator/live E2E |
 | TODO | Local HTTP + fake SDK: create/read/list, read-merge-upsert preserving title/date, delete, missing 404, SDK category in the existing 500 response, static HTML response | Native persistence/query behavior, browser interaction, concurrent updates, emulator/live E2E |
 | Change Feed | Offline public cursor serialization/resume callback round-trip and malformed-token exception; synthetic nested Map/null/empty payload rendering through the actual watcher formatter | Hydrated native cursors, feed delivery/order, consumer-thread error handling, retention/AVAD, emulator/live E2E |
@@ -472,7 +476,7 @@ live account and is intentionally not part of this offline/local verification.
 
 | Observation | Current sample/application approach | Team/SDK follow-up to evaluate (not implemented or approved) |
 | --- | --- | --- |
-| Mapping/date/null policy is customer boilerplate | Explicit Jackson/Gson settings, one visible fixture and exact comparisons | Documentation/usability review; no automatic serializer redesign |
+| Mapping/date/null policy is customer boilerplate | Explicit Jackson settings and direct calls, one visible fixture and exact comparisons | Documentation/usability review; no automatic serializer redesign |
 | Cosmos/Dynamo `update` replaces; existing TODO edits and Risk alert acknowledgement merge client-side then upsert | Keep current business behavior and verify preserved fields | Concurrent lost-update risk remains. Any partial-update work would improve the existing update API; a separate API is not agreed |
 | Missing read is null; duplicate/invalid writes throw; diagnostics availability differs by path/provider | Explicit null branch and category catches in POJO; optional fields displayed honestly | Evaluate exceptionless failure handling and diagnostics consistency; no new API or overhead claim |
 | Existing app HTTP error policies are simplistic | Smoke records TODO's category-bearing 500 and Risk's generic 500; no redesign of all handlers | Existing handlers may echo exception messages, and do not surface diagnostics. Harden before customer deployment; do not treat legacy app logs/HTTP as sanitized |
@@ -482,7 +486,7 @@ live account and is intentionally not part of this offline/local verification.
 ### Team review checklist
 
 - Follow a visible POJO through customer Map conversion, each public CRUD/query call, and POJO restoration against independent expected data.
-- Review required setup/boilerplate and failure-path code in the five linked files; note unclear ownership or surprising defaults.
+- Review required setup/boilerplate and failure-path code in the four linked files; note unclear ownership or surprising defaults.
 - Inspect nested objects/lists/maps, enums, dates, and null versus missing. Numeric limits are outside this sample's scope; do not accept coercion as a hidden fix.
 - Confirm replacement `update` versus app-side read/merge/upsert, including concurrency limitations.
 - Review null returns, expected categories, unexpected exceptions, retry hints, and whether an exceptionless alternative is worth future investigation.
@@ -491,14 +495,14 @@ live account and is intentionally not part of this offline/local verification.
 
 ## Evidence and limits
 
-The offline suite checks both codecs against the independent fixture, missing/null
+The offline suite checks Jackson mapping against the independent fixture, missing/null
 and value mismatch detection, explicit live opt-in, target validation, bounded
 partition query pagination, and cleanup ownership/failure paths. Public SDK calls
 in orchestration unit tests use an explicitly labeled in-memory test double:
 **they do not validate native mapping or live storage**. A separate offline cursor
 round-trip checks the directly required migration of existing change-feed samples.
 
-Observed offline results: both serializer preview runs and twenty-four JUnit tests
+Observed offline results: the Jackson preview and twenty-four JUnit tests
 passed on JDK 17; the original released-SDK profile also compiled. The PowerShell
 script was executed end to end using PowerShell on Linux, including the installed/
 resolved artifact hash checks. Native Windows execution has not been performed.

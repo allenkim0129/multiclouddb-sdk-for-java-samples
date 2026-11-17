@@ -3,7 +3,11 @@
 package com.multiclouddb.samples.serialization;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
-import com.google.gson.JsonParseException;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.DeserializationFeature;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.SerializationFeature;
+import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.multiclouddb.api.DocumentResult;
 import com.multiclouddb.api.MulticloudDbClient;
 import com.multiclouddb.api.MulticloudDbClientFactory;
@@ -25,6 +29,11 @@ import java.util.UUID;
 /** Run preview by default; live requires both an explicit mode and --allow-live. */
 public final class ComplexPojoSample {
     public static final String SDK_SHA = "ef339fb6529a1b367987bff0b4884c4127708fd9";
+    static final ObjectMapper MAPPER = new ObjectMapper()
+            .registerModule(new JavaTimeModule())
+            .disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS)
+            .enable(DeserializationFeature.USE_BIG_DECIMAL_FOR_FLOATS);
+    static final TypeReference<Map<String, Object>> MAP_TYPE = new TypeReference<>() { };
     private int failures;
 
     public static void main(String[] args) {
@@ -34,7 +43,7 @@ public final class ComplexPojoSample {
         } catch (IllegalArgumentException invalid) {
             safeError("startup/input mapping", invalid);
             exit = 1;
-        } catch (MulticloudDbException | JsonParseException | IllegalStateException | IOException failure) {
+        } catch (MulticloudDbException | IllegalStateException | IOException failure) {
             safeError("startup/serialization", failure);
             exit = 1;
         } catch (InterruptedException interrupted) {
@@ -62,17 +71,17 @@ public final class ComplexPojoSample {
         System.out.println("Expected SDK SHA (use the pinned build script): " + SDK_SHA);
         System.out.println("SDK loaded from: " + MulticloudDbClient.class.getProtectionDomain().getCodeSource().getLocation());
         if (preview) {
-            for (var codec : CustomerSerializers.configured()) {
-                Order original = OrderFixtures.create("preview", 1);
-                Map<String, Object> expected = ExpectedDocuments.load("preview", 1);
-                System.out.println("\nPREVIEW " + codec.name() + "/baseline");
-                System.out.println("Original POJO: " + original);
-                show("Independent expected JSON", expected);
-                Map<String, Object> document = codec.toDocument(original);
-                show("Customer serializer -> Map", document);
-                check("POJO -> Map", expected, document);
-                restore(codec, expected, document);
-            }
+            Order original = OrderFixtures.create("preview", 1);
+            Map<String, Object> expected = ExpectedDocuments.load("preview", 1);
+            System.out.println("\nPREVIEW jackson/baseline");
+            System.out.println("Original POJO: " + original);
+            show("Independent expected JSON", expected);
+            Map<String, Object> document = MAPPER.convertValue(original, MAP_TYPE);
+            show("Jackson -> Map", document);
+            check("POJO -> Map", expected, document);
+            Order restored = MAPPER.convertValue(document, Order.class);
+            System.out.println("Restored POJO: " + restored);
+            check("restored POJO vs independent expected", expected, MAPPER.convertValue(restored, MAP_TYPE));
             System.out.println("OFFLINE ONLY: no SDK writes/reads/queries or cloud connections were performed.");
         } else {
             String runId = settings.prefix() + "-" + UUID.randomUUID();
@@ -82,9 +91,7 @@ public final class ComplexPojoSample {
             System.out.println("Existing targets only. Each confirmed-created key is deleted in finally.");
             MulticloudDbClient client = MulticloudDbClientFactory.create(settings.config());
             try {
-                for (var codec : CustomerSerializers.configured()) {
-                    exercise(client, settings.address(), codec, runId);
-                }
+                exercise(client, settings.address(), runId);
             } finally {
                 closeClient(client);
             }
@@ -105,20 +112,20 @@ public final class ComplexPojoSample {
         }
     }
 
-    void exercise(MulticloudDbClient client, ResourceAddress address, CustomerSerializers.Codec codec,
+    void exercise(MulticloudDbClient client, ResourceAddress address,
                   String runId) throws IOException, InterruptedException {
-        MulticloudDbKey key = MulticloudDbKey.of(runId, codec.name() + "-baseline");
+        MulticloudDbKey key = MulticloudDbKey.of(runId, "jackson-baseline");
         boolean created = false;
         String step = "prepare";
-        System.out.println("\nLIVE " + codec.name() + "/baseline"
+        System.out.println("\nLIVE jackson/baseline"
                 + " partitionKey=" + key.partitionKey() + " sortKey/id=" + key.sortKey());
         try {
             Order original = OrderFixtures.create(runId, 1);
             Map<String, Object> expected = ExpectedDocuments.load(runId, 1);
             System.out.println("Original POJO: " + original);
             show("Independent expected JSON", expected);
-            Map<String, Object> document = codec.toDocument(original);
-            show("Customer serializer -> Map", document);
+            Map<String, Object> document = MAPPER.convertValue(original, MAP_TYPE);
+            show("Jackson -> Map", document);
             if (!check("POJO -> Map before I/O", expected, document)) {
                 return;
             }
@@ -133,7 +140,9 @@ public final class ComplexPojoSample {
             show("SDK read Map (including provider fields)", returned);
             Map<String, Object> payload = ExpectedDocuments.payload(returned);
             check("read vs independent expected", expected, payload);
-            restore(codec, expected, payload);
+            Order restored = MAPPER.convertValue(payload, Order.class);
+            System.out.println("Restored POJO: " + restored);
+            check("restored POJO vs independent expected", expected, MAPPER.convertValue(restored, MAP_TYPE));
 
             step = "update";
             Map<String, Object> replacement = Map.of("orderId", original.orderId(),
@@ -147,14 +156,16 @@ public final class ComplexPojoSample {
 
             step = "upsert";
             Order restoredOrder = OrderFixtures.create(runId, 3);
-            Map<String, Object> upsertDocument = codec.toDocument(restoredOrder);
+            Map<String, Object> upsertDocument = MAPPER.convertValue(restoredOrder, MAP_TYPE);
             show("upsert input: complete POJO mapped again", upsertDocument);
             client.upsert(address, key, upsertDocument);
             expected = ExpectedDocuments.load(runId, 3);
             Map<String, Object> afterUpsert = awaitRead(client, address, key, 3);
             show("SDK read after upsert", afterUpsert);
             check("upsert vs independent expected", expected, ExpectedDocuments.payload(afterUpsert));
-            restore(codec, expected, ExpectedDocuments.payload(afterUpsert));
+            Order upserted = MAPPER.convertValue(ExpectedDocuments.payload(afterUpsert), Order.class);
+            System.out.println("Restored POJO: " + upserted);
+            check("restored POJO vs independent expected", expected, MAPPER.convertValue(upserted, MAP_TYPE));
 
             step = "query";
             List<Map<String, Object>> rows = awaitQuery(client, address, runId, key.sortKey());
@@ -163,9 +174,11 @@ public final class ComplexPojoSample {
                 show("SDK query row", row);
                 Map<String, Object> queryPayload = ExpectedDocuments.payload(row);
                 check("query vs independent expected", expected, queryPayload);
-                restore(codec, expected, queryPayload);
+                Order queried = MAPPER.convertValue(queryPayload, Order.class);
+                System.out.println("Restored POJO: " + queried);
+                check("restored POJO vs independent expected", expected, MAPPER.convertValue(queried, MAP_TYPE));
             }
-        } catch (MulticloudDbException | IllegalArgumentException | IllegalStateException | JsonParseException failure) {
+        } catch (MulticloudDbException | IllegalArgumentException | IllegalStateException failure) {
             failures++;
             safeError(step, failure);
             if (step.equals("create") && !created) {
@@ -269,7 +282,7 @@ public final class ComplexPojoSample {
                 var page = client.query(address, request);
                 System.out.println("QUERY " + diagnosticsSummary(page.diagnostics()));
                 for (Map<String, Object> row : page.items()) {
-                    // Earlier cases may remain after a failed cleanup. Do not compare/delete them here.
+                    // Only compare the exact document created by this run.
                     if (caseId.equals(row.get("sortKey")) || caseId.equals(row.get("id"))) {
                         rows.add(row);
                     }
@@ -290,12 +303,6 @@ public final class ComplexPojoSample {
         throw new IllegalStateException("Expected query rows not visible after bounded queries");
     }
 
-    private void restore(CustomerSerializers.Codec codec, Map<String, Object> expected, Map<String, Object> map) {
-        Order restored = codec.fromDocument(map);
-        System.out.println("Restored POJO: " + restored);
-        check("restored POJO vs independent expected", expected, codec.toDocument(restored));
-    }
-
     private boolean check(String label, Object expected, Object actual) {
         List<String> differences = ExpectedDocuments.differences(expected, actual);
         System.out.println((differences.isEmpty() ? "PASS " : "FAIL ") + label);
@@ -307,7 +314,7 @@ public final class ComplexPojoSample {
     }
 
     private static void show(String label, Map<String, Object> map) throws JsonProcessingException {
-        System.out.println(label + ":\n" + CustomerSerializers.jackson()
+        System.out.println(label + ":\n" + MAPPER
                 .writerWithDefaultPrettyPrinter().writeValueAsString(map));
         ExpectedDocuments.printTypes("$", map);
     }
