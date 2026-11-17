@@ -35,6 +35,9 @@ mvn compile
 
 The **complex POJO** sample uses the dedicated `serialization-pr` profile and pinned build
 procedure in [its guide](README-serialization.md), not the published SDK defaults.
+Its code is in `src/main/java/com/multiclouddb/samples/serialization/`, alongside the
+other samples; its expected JSON is `src/main/resources/fixtures/baseline.json`.
+The default released-SDK build excludes this package because it needs the PR's Map API.
 Use `mvn clean` when switching profiles. The profile compiles all existing samples with
 the new Map/cursor API, but packages only synthetic fixtures, static UI assets, and safe logging configuration;
 existing classpath-based app configurations are not included.

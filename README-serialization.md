@@ -7,18 +7,18 @@ Only synthetic orders are used. **The app is live-only and requires an explicit
 provider, test target and `--allow-live`. Building does not run the live app.**
 
 **App name:** Complex POJO Serialization. **Main class:**
-[`com.multiclouddb.samples.serialization.ComplexPojoSample`](src/serialization/java/com/multiclouddb/samples/serialization/ComplexPojoSample.java).
+[`com.multiclouddb.samples.serialization.ComplexPojoSample`](src/main/java/com/multiclouddb/samples/serialization/ComplexPojoSample.java).
 The `public static void main(String[] args)` method is in
-`src/serialization/java/com/multiclouddb/samples/serialization/ComplexPojoSample.java`.
+`src/main/java/com/multiclouddb/samples/serialization/ComplexPojoSample.java`.
 
 ## Team review: start with these four customer files
 
 | Read in order | Review focus |
 | --- | --- |
-| [Order.java](src/serialization/java/com/multiclouddb/samples/serialization/Order.java) | What the application owns: nested POJOs and Java field types |
-| [OrderFixtures.java](src/serialization/java/com/multiclouddb/samples/serialization/OrderFixtures.java) | Visible synthetic inputs; compare with the [independent JSON fixtures](src/serialization/resources/fixtures) |
-| [ComplexPojoSample.java](src/serialization/java/com/multiclouddb/samples/serialization/ComplexPojoSample.java) | Jackson `ObjectMapper` setup, direct `convertValue` calls, public SDK calls in `exercise`, diagnostics, comparison and cleanup |
-| [LiveSettings.java](src/serialization/java/com/multiclouddb/samples/serialization/LiveSettings.java) | External properties loading, primary-key configuration, live opt-in and legacy environment compatibility |
+| [Order.java](src/main/java/com/multiclouddb/samples/serialization/Order.java) | What the application owns: nested POJOs and Java field types |
+| [OrderFixtures.java](src/main/java/com/multiclouddb/samples/serialization/OrderFixtures.java) | Visible synthetic inputs; compare with the [independent JSON fixture](src/main/resources/fixtures/baseline.json) |
+| [ComplexPojoSample.java](src/main/java/com/multiclouddb/samples/serialization/ComplexPojoSample.java) | Jackson `ObjectMapper` setup, direct `convertValue` calls, public SDK calls in `exercise`, diagnostics, comparison and cleanup |
+| [LiveSettings.java](src/main/java/com/multiclouddb/samples/serialization/LiveSettings.java) | External properties loading, primary-key configuration, live opt-in and legacy environment compatibility |
 
 Short walkthrough: configure your live test target, follow one original order into
 `MAPPER.convertValue`, and compare its returned Map/types and restored POJO to the
@@ -36,7 +36,7 @@ remain separate decisions.
 
 ## Find and edit the inputs
 
-| File under `src/serialization/` | Purpose |
+| File under `src/main/` | Purpose |
 | --- | --- |
 | `java/com/multiclouddb/samples/serialization/Order.java` | Application POJOs (Java 17 records): order, customer/address, line items and enum |
 | `java/com/multiclouddb/samples/serialization/OrderFixtures.java` | Explicit constructors and numeric/date literals; edit inputs here |
@@ -113,10 +113,18 @@ Quote each PowerShell `"-Dname=value"` argument. Do not copy the repository's ol
 `0.2.0-SNAPSHOT` override example for this experiment. SDK modifications require a
 separately reviewed pin and a fresh provenance build.
 
-The normal profile still uses the original published SDK versions. Small customer-side
+The default `released-sdk` profile still uses the original published SDK versions.
+Selecting `serialization-pr` disables that default profile, keeping their resource
+sets separate. Small customer-side
 Map-to-JSON conversions preserve the existing applications' JSON interfaces. Two
 profile-selected `CursorSerialization` helpers adapt the incompatible released/PR cursor
-signatures without reflective fallbacks. Always clean when switching profiles.
+signatures without reflective fallbacks, in `src/sdk-released/java` and `src/sdk-pr/java`.
+The POJO sample itself lives alongside the other apps in `src/main/java`; it is excluded
+from the default released-SDK build because it requires the PR's Map API.
+The `serialization-pr` profile includes it, packages `src/main/resources/fixtures`,
+and uses `src/main/resources/serialization/logback.xml` as its root logging config
+to suppress potentially sensitive native diagnostics. The other apps' default logging
+configuration is unchanged. Always clean when switching profiles.
 
 ## Run the live sample
 

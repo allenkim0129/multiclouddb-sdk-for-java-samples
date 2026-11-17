@@ -145,6 +145,34 @@
 
     <profiles>
         <profile>
+            <id>released-sdk</id>
+            <activation>
+                <activeByDefault>true</activeByDefault>
+            </activation>
+            <build>
+                <resources>
+                    <resource>
+                        <directory>src/main/resources</directory>
+                        <excludes>
+                            <exclude>serialization-cosmos-cloud.properties</exclude>
+                        </excludes>
+                    </resource>
+                </resources>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-compiler-plugin</artifactId>
+                        <configuration>
+                            <!-- The POJO sample requires the PR's Map API. -->
+                            <excludes>
+                                <exclude>com/multiclouddb/samples/serialization/**</exclude>
+                            </excludes>
+                        </configuration>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+        <profile>
             <id>serialization-pr</id>
             <properties>
                 <multiclouddb-api.version>0.1.0-beta.2-SNAPSHOT</multiclouddb-api.version>
@@ -153,7 +181,7 @@
                 <multiclouddb-provider-spanner.version>0.1.0-beta.1-SNAPSHOT</multiclouddb-provider-spanner.version>
                 <azure-cosmos.version>4.82.0</azure-cosmos.version>
                 <jackson.version>2.18.9</jackson.version>
-                <sdk.serialization.sources>src/serialization/java</sdk.serialization.sources>
+                <sdk.serialization.sources>src/sdk-pr/java</sdk.serialization.sources>
             </properties>
             <dependencyManagement>
                 <dependencies>
@@ -181,13 +209,17 @@
             </dependencies>
             <build>
                 <!-- Never package the existing samples' local credential configs. -->
-                <resources combine.self="override">
+                <resources>
                     <resource>
-                        <directory>src/serialization/resources</directory>
+                        <directory>src/main/resources/serialization</directory>
+                        <includes><include>logback.xml</include></includes>
                     </resource>
                     <resource>
                         <directory>src/main/resources</directory>
-                        <includes><include>static/**</include></includes>
+                        <includes>
+                            <include>fixtures/**</include>
+                            <include>static/**</include>
+                        </includes>
                     </resource>
                 </resources>
                 <plugins>
@@ -217,14 +249,6 @@
     </profiles>
 
     <build>
-        <resources>
-            <resource>
-                <directory>src/main/resources</directory>
-                <excludes>
-                    <exclude>serialization-cosmos-cloud.properties</exclude>
-                </excludes>
-            </resource>
-        </resources>
         <plugins>
             <plugin>
                 <groupId>org.codehaus.mojo</groupId>
