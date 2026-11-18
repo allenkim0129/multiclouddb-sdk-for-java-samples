@@ -406,8 +406,9 @@ Known root provider fields (`id`, keys, Cosmos metadata) are excluded from
 POJO comparison; unexpected application fields still fail.
 
 Point reads call `client.read()` once, without waiting or retrying. Missing or stale
-data fails the check immediately. Query follows continuation tokens, at most ten pages per attempt
-and five attempts. Value differences are **not retried away or excused**.
+data fails the check immediately. `queryDocuments` calls `client.query()` once per
+page, following continuation tokens up to ten pages without waiting or retrying.
+Empty or stale query results fail the subsequent comparisons.
 An unexpected operation error or failed comparison throws immediately.
 There is no failure accumulation or continuation after a mismatch.
 Cleanup is still attempted for a confirmed create.
@@ -443,8 +444,8 @@ failures are reported by count; inspect only the printed document key.
 
 Sample assertion messages include the expected/actual synthetic values or the
 missing property's name, never a configured credential. There is no failure counter,
-catch-and-continue loop, or automatic retry of writes or point reads. Only the query
-helper waits for missing/stale results to become visible. Error-contract and metadata
+catch-and-continue loop, or sample-level retry of writes, point reads or queries.
+Query pagination only fetches the next page; it does not poll for data. Error-contract and metadata
 demonstrations are intentionally outside this POJO walkthrough.
 
 ## Existing apps: migration smoke and review status
@@ -574,7 +575,7 @@ in orchestration unit tests use an explicitly labeled in-memory test double:
 **they do not validate native mapping or live storage**. A separate offline cursor
 round-trip checks the directly required migration of existing change-feed samples.
 
-Observed offline results: twenty-five JUnit tests
+Observed offline results: twenty-six JUnit tests
 passed on JDK 17; the original released-SDK profile also compiled. The PowerShell
 script was executed end to end using PowerShell on Linux, including the installed/
 resolved artifact hash checks. Native Windows execution has not been performed.

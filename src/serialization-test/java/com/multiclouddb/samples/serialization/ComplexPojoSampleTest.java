@@ -202,7 +202,7 @@ class ComplexPojoSampleTest {
             assertEquals("next", request.continuationToken());
             return new QueryPage(List.of(Map.of("id", "case", "revision", 4, "runId", "own-run")), null);
         });
-        assertEquals(1, ComplexPojoSample.awaitQuery(client,
+        assertEquals(1, ComplexPojoSample.queryDocuments(client,
                 new ResourceAddress("db", "orders"), "own-run").size());
         assertEquals(2, calls.get());
     }
@@ -214,9 +214,25 @@ class ComplexPojoSampleTest {
             calls.incrementAndGet();
             return new QueryPage(List.of(), "endless");
         });
-        assertThrows(AssertionError.class, () -> ComplexPojoSample.awaitQuery(client,
+        assertThrows(AssertionError.class, () -> ComplexPojoSample.queryDocuments(client,
                 new ResourceAddress("db", "orders"), "own-run"));
         assertEquals(10, calls.get());
+    }
+
+    @Test
+    void queryReturnsEmptyOrStaleResultsWithoutRetrying() {
+        List<Map<String, Object>> stale = List.of(Map.of("runId", "own-run", "revision", 1));
+        for (List<Map<String, Object>> rows : List.of(List.<Map<String, Object>>of(), stale)) {
+            AtomicInteger calls = new AtomicInteger();
+            var client = fake((method, args) -> {
+                assertEquals("query", method);
+                calls.incrementAndGet();
+                return new QueryPage(rows, null);
+            });
+
+            assertEquals(rows, queryDocuments(client, new ResourceAddress("db", "orders"), "own-run"));
+            assertEquals(1, calls.get());
+        }
     }
 
     @Test
