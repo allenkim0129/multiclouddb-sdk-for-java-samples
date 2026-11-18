@@ -106,7 +106,7 @@ class ComplexPojoSampleTest {
                 QueryRequest query = (QueryRequest) args[1];
                 assertEquals("own-run", query.partitionKey());
                 assertEquals("status = @status", query.expression());
-                assertEquals(Map.of("status", "NEW"), query.parameters());
+                assertEquals(Map.of("status", "PAID"), query.parameters());
                 List<Map<String, Object>> partition = store.entrySet().stream()
                         .filter(entry -> entry.getKey().partitionKey().equals("own-run"))
                         .map(Map.Entry::getValue).toList();
@@ -247,7 +247,9 @@ class ComplexPojoSampleTest {
     @Test
     void queryFollowsEmptyPagesAndRemainsPartitionScoped() throws Exception {
         AtomicInteger calls = new AtomicInteger();
-        Map<String, Object> row = inputDocument("own-run", 4);
+        Map<String, Object> row = inputDocument("own-run", 1);
+        row.put("orderId", "synthetic-order-paid");
+        row.put("status", "PAID");
         OperationDiagnostics diagnostics = OperationDiagnostics.builder(ProviderId.COSMOS, "query", Duration.ofMillis(12))
                 .requestId("synthetic-request-1").statusCode(200).requestCharge(2.5).itemCount(0)
                 .etag("PRIVATE-ETAG").sessionToken("PRIVATE-SESSION").build();
@@ -256,7 +258,7 @@ class ComplexPojoSampleTest {
             QueryRequest request = (QueryRequest) args[1];
             assertEquals("own-run", request.partitionKey());
             assertEquals("status = @status", request.expression());
-            assertEquals(Map.of("status", "NEW"), request.parameters());
+            assertEquals(Map.of("status", "PAID"), request.parameters());
             if (calls.getAndIncrement() == 0) {
                 assertNull(request.continuationToken());
                 return new QueryPage(List.of(), "PRIVATE-CONTINUATION", diagnostics);
@@ -301,7 +303,10 @@ class ComplexPojoSampleTest {
 
     @Test
     void queryRejectsEmptyOrStaleResultsWithoutRetrying() throws Exception {
-        List<Map<String, Object>> stale = List.of(inputDocument("own-run", 1));
+        Map<String, Object> staleOrder = inputDocument("own-run", 0);
+        staleOrder.put("orderId", "synthetic-order-paid");
+        staleOrder.put("status", "PAID");
+        List<Map<String, Object>> stale = List.of(staleOrder);
         for (List<Map<String, Object>> rows : List.of(List.<Map<String, Object>>of(), stale)) {
             AtomicInteger calls = new AtomicInteger();
             var client = clientWithQuery((method, args) -> {
@@ -312,7 +317,7 @@ class ComplexPojoSampleTest {
 
             AssertionError error = assertThrows(AssertionError.class, () ->
                     new ComplexPojoSample().exercise(client, new ResourceAddress("db", "orders"), "own-run"));
-            assertTrue(error.getMessage().contains(rows.isEmpty() ? "query NEW order count" : "query vs upsert input"));
+            assertTrue(error.getMessage().contains(rows.isEmpty() ? "query PAID order count" : "query vs PAID order"));
             assertEquals(1, calls.get());
         }
     }

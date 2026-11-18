@@ -119,7 +119,8 @@ public final class ComplexPojoSample {
             paidOrder.setOrderId("synthetic-order-paid");
             paidOrder.setStatus(Order.Status.PAID);
             MulticloudDbKey paidKey = MulticloudDbKey.of(runId, "jackson-paid");
-            client.create(address, paidKey, MAPPER.convertValue(paidOrder, MAP_TYPE));
+            Map<String, Object> paidDocument = MAPPER.convertValue(paidOrder, MAP_TYPE);
+            client.create(address, paidKey, paidDocument);
 
             try {
                 System.out.println("PASS create second order (PAID)");
@@ -164,7 +165,7 @@ public final class ComplexPojoSample {
                 Map<String, Object> fullDocument = MAPPER.convertValue(fullOrder, MAP_TYPE);
                 client.upsert(address, key, fullDocument);
 
-                // Query NEW orders only: return the first order, not the PAID order.
+                // Query PAID orders only: return the second order, not the NEW order.
                 List<Map<String, Object>> rows = new ArrayList<>();
                 String token = null;
                 int pages = 0;
@@ -172,7 +173,7 @@ public final class ComplexPojoSample {
                 // Fetch each page once. Continuation tokens mean more pages, not retries.
                 do {
                     QueryRequest request = QueryRequest.builder().partitionKey(runId)
-                            .expression("status = @status").parameters(Map.of("status", "NEW"))
+                            .expression("status = @status").parameters(Map.of("status", "PAID"))
                             .maxPageSize(2).continuationToken(token).build();
                     var page = client.query(address, request);
                     OperationDiagnostics diagnostics = page.diagnostics();
@@ -182,11 +183,11 @@ public final class ComplexPojoSample {
                     check(++pages < 10 || token == null, "Query page budget exceeded");
                 } while (token != null);
 
-                checkEquals("query NEW order count (excluding PAID)", 1, rows.size());
+                checkEquals("query PAID order count (excluding NEW)", 1, rows.size());
                 Map<String, Object> row = rows.get(0);
-                checkEquals("query vs upsert input", fullDocument, payload(row));
+                checkEquals("query vs PAID order", paidDocument, payload(row));
                 Order queried = MAPPER.convertValue(payload(row), Order.class);
-                checkEquals("restored query POJO", fullOrder, queried);
+                checkEquals("restored query POJO", paidOrder, queried);
             } finally {
                 // This scope is entered only after the second create succeeds.
                 client.delete(address, paidKey);

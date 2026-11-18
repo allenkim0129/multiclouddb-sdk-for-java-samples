@@ -411,8 +411,8 @@ Both approaches send the complete document and preserve unedited fields.
 The following upsert writes a fresh order from the JSON input (`NEW`, revision `4`).
 Point reads use the `jackson-baseline` key and return only that order even though
 both documents exist. The query stays in the same partition and sends
-`status = @status` with `status = NEW` to the SDK. It must return exactly the
-first order and exclude the second, `PAID` order; no client-side status filter
+`status = @status` with `status = PAID` to the SDK. It must return exactly the
+second, `PAID` order and exclude the first, `NEW` order; no client-side status filter
 is used.
 Known root provider fields (`id`, keys, Cosmos metadata) are excluded from
 POJO comparison; unexpected application fields still fail.
