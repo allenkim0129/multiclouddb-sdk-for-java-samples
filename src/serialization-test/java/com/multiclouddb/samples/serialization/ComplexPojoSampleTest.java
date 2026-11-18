@@ -39,7 +39,7 @@ class ComplexPojoSampleTest {
         Order input = createOrder("unit-test", 1);
         Map<String, Object> returned = untyped.readValue(
                 untyped.writeValueAsString(MAPPER.convertValue(input, MAP_TYPE)), MAP_TYPE);
-        Map<String, Object> expected = loadExpected("unit-test", 1);
+        Map<String, Object> expected = inputDocument("unit-test", 1);
         assertTrue(documentsEqual(expected, returned));
         Order restored = MAPPER.convertValue(returned, Order.class);
         assertTrue(documentsEqual(expected, MAPPER.convertValue(restored, MAP_TYPE)));
@@ -48,11 +48,14 @@ class ComplexPojoSampleTest {
     }
 
     @Test
-    void jacksonMatchesIndependentFixtureAndRestoresJavaTypes() throws Exception {
-        Order input = createOrder("unit-test", 1);
-        Map<String, Object> expected = loadExpected("unit-test", 1);
+    void inlineJsonCreatesOrderWithoutChangingNestedDataOrRunId() throws Exception {
+        String runId = "unit-\"test\\path";
+        Order input = createOrder(runId, 3);
+        Map<String, Object> expected = inputDocument(runId, 3);
         Map<String, Object> document = MAPPER.convertValue(input, MAP_TYPE);
         assertTrue(documentsEqual(expected, document));
+        assertEquals(runId, input.runId());
+        assertEquals(3, input.revision());
         Order restored = MAPPER.convertValue(document, Order.class);
         assertEquals(input, restored);
         assertTrue(document.containsKey("note"));
@@ -79,7 +82,7 @@ class ComplexPojoSampleTest {
 
     @Test
     void providerFieldsAreRemovedOnlyAtRootAndUnexpectedApplicationFieldsStillFail() throws Exception {
-        Map<String, Object> expected = loadExpected("test", 1);
+        Map<String, Object> expected = inputDocument("test", 1);
         Map<String, Object> returned = new LinkedHashMap<>(expected);
         returned.put("id", "case");
         returned.put("partitionKey", "test");
@@ -219,7 +222,7 @@ class ComplexPojoSampleTest {
     @Test
     void comparisonFailureStopsBeforeUpdateAndStillDeletesOwnedDocument() throws Exception {
         List<String> operations = new ArrayList<>();
-        Map<String, Object> returned = loadExpected("own-run", 1);
+        Map<String, Object> returned = inputDocument("own-run", 1);
         returned.put("note", "unexpected");
         AtomicInteger reads = new AtomicInteger();
         var client = fake((method, args) -> {
@@ -233,7 +236,7 @@ class ComplexPojoSampleTest {
 
         AssertionError error = assertThrows(AssertionError.class, () ->
                 new ComplexPojoSample().exercise(client, new ResourceAddress("db", "orders"), "own-run"));
-        assertTrue(error.getMessage().contains("read vs independent expected"));
+        assertTrue(error.getMessage().contains("read vs original"));
         assertTrue(error.getMessage().contains("note=unexpected"));
         assertEquals(List.of("create", "read", "delete"), operations);
     }
@@ -304,6 +307,14 @@ class ComplexPojoSampleTest {
         assertTrue(safeFailureMessage(failure(MulticloudDbErrorCategory.INVALID_REQUEST, null))
                 .contains("statusCode=null"));
         assertFalse(safeFailureMessage(new IllegalArgumentException("PRIVATE-CONFIG")).contains("PRIVATE"));
+    }
+
+    // Compare against the raw JSON, not against a Map generated from the POJO under test.
+    private static Map<String, Object> inputDocument(String runId, int revision) throws Exception {
+        Map<String, Object> input = MAPPER.readValue(ORDER_JSON, MAP_TYPE);
+        input.put("runId", runId);
+        input.put("revision", revision);
+        return input;
     }
 
     private static MulticloudDbException failure(MulticloudDbErrorCategory category, Integer status) {

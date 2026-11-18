@@ -2,6 +2,7 @@
 // Licensed under the MIT License.
 package com.multiclouddb.samples.serialization;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -17,11 +18,6 @@ import com.multiclouddb.api.QueryRequest;
 import com.multiclouddb.api.ResourceAddress;
 import com.multiclouddb.samples.ConfigLoader;
 
-import java.io.IOException;
-import java.math.BigDecimal;
-import java.math.BigInteger;
-import java.time.Instant;
-import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -30,6 +26,32 @@ import java.util.UUID;
 
 /** Order -> Jackson Map -> public SDK -> Map -> Order, using an existing Cosmos/Dynamo target. */
 public final class ComplexPojoSample {
+    // Edit this synthetic input to see exactly which nested data the sample exercises.
+    static final String ORDER_JSON = """
+            {
+              "orderId": "synthetic-order-baseline",
+              "runId": "replaced-at-runtime",
+              "revision": 1,
+              "status": "NEW",
+              "customer": {
+                "name": "Synthetic Customer",
+                "address": {"city": "Example City", "postalCode": "00123"}
+              },
+              "items": [
+                {"sku": "SYNTHETIC-A", "quantity": 2, "unitPrice": 50.25, "tags": ["demo", "fragile"]},
+                {"sku": "SYNTHETIC-B", "quantity": 1, "unitPrice": 25.00, "tags": []}
+              ],
+              "labels": {"channel": "sample", "region": "test"},
+              "optionalFields": {"giftMessage": null},
+              "placedAt": "2026-01-02T03:04:05.123456789Z",
+              "deliveryDate": "2026-01-05",
+              "note": null,
+              "sequence": 12345,
+              "externalNumber": 42,
+              "total": 125.50
+            }
+            """;
+
     // Support Java dates as ISO strings and preserve decimals in untyped Maps.
     static final ObjectMapper MAPPER = new ObjectMapper()
             .registerModule(new JavaTimeModule())
@@ -80,11 +102,9 @@ public final class ComplexPojoSample {
         // One unique partition per run. Cleanup may delete only this exact, confirmed-created key.
         MulticloudDbKey key = MulticloudDbKey.of(runId, "jackson-baseline");
 
-        // Compare Jackson's output with independent JSON before writing anything.
+        // JSON is just a convenient way to build the input POJO; the SDK receives its Map.
         Order original = createOrder(runId, 1);
-        Map<String, Object> expected = loadExpected(runId, 1);
         Map<String, Object> document = MAPPER.convertValue(original, MAP_TYPE);
-        checkEquals("POJO -> Map before I/O", expected, document);
 
         // A failed/ambiguous create must not trigger deletion of a possibly pre-existing document.
         client.create(address, key, document);
@@ -97,9 +117,9 @@ public final class ComplexPojoSample {
             // Read the stored Map and restore the complex Order directly with Jackson.
             Map<String, Object> returned = awaitRead(client, address, key, 1);
             Map<String, Object> payload = payload(returned);
-            checkEquals("read vs independent expected", expected, payload);
+            checkEquals("read vs original", document, payload);
             Order restored = MAPPER.convertValue(payload, Order.class);
-            checkEquals("restored POJO", expected, MAPPER.convertValue(restored, MAP_TYPE));
+            checkEquals("restored POJO", original, restored);
 
             // At this SDK pin, update REPLACES the body, not individual fields.
             // This deliberately small body must remove customer/items and the other omitted fields.
@@ -116,13 +136,12 @@ public final class ComplexPojoSample {
             client.upsert(address, key, fullDocument);
 
             // Read back the upsert through query, then restore its single order.
-            expected = loadExpected(runId, 3);
             List<Map<String, Object>> rows = awaitQuery(client, address, runId);
             checkEquals("query row count", 1, rows.size());
             Map<String, Object> row = rows.get(0);
-            checkEquals("query vs independent expected", expected, payload(row));
+            checkEquals("query vs upsert input", fullDocument, payload(row));
             Order queried = MAPPER.convertValue(payload(row), Order.class);
-            checkEquals("restored query POJO", expected, MAPPER.convertValue(queried, MAP_TYPE));
+            checkEquals("restored query POJO", fullOrder, queried);
         }
 
         System.out.println("PASS delete");
@@ -130,20 +149,11 @@ public final class ComplexPojoSample {
 
     // Everything below supports the walkthrough above; no separate helper classes are needed.
 
-    static Order createOrder(String runId, int revision) {
-        // Visible synthetic inputs; edit alongside resources/fixtures/baseline.json.
-        // Map.of rejects nulls. Include giftMessage as null and leave coupon absent.
-        Map<String, Object> optionalFields = new LinkedHashMap<>();
-        optionalFields.put("giftMessage", null);
-
-        return new Order("synthetic-order-baseline", runId, revision, Order.Status.NEW,
-                new Order.Customer("Synthetic Customer",
-                        new Order.Address("Example City", "00123")),
-                List.of(new Order.LineItem("SYNTHETIC-A", 2, new BigDecimal("50.25"), List.of("demo", "fragile")),
-                        new Order.LineItem("SYNTHETIC-B", 1, new BigDecimal("25.00"), List.of())),
-                Map.of("channel", "sample", "region", "test"), optionalFields,
-                Instant.parse("2026-01-02T03:04:05.123456789Z"), LocalDate.parse("2026-01-05"),
-                null, 12345L, new BigInteger("42"), new BigDecimal("125.50"));
+    static Order createOrder(String runId, int revision) throws JsonProcessingException {
+        Map<String, Object> input = MAPPER.readValue(ORDER_JSON, MAP_TYPE);
+        input.put("runId", runId);
+        input.put("revision", revision);
+        return MAPPER.convertValue(input, Order.class);
     }
 
     private static void checkRequiredProperties(ConfigLoader.AppConfig config, String provider) {
@@ -162,19 +172,6 @@ public final class ComplexPojoSample {
 
         check(config.sdk().provider().id().equals(provider),
                 "Config provider must match the cosmos/dynamo argument");
-    }
-
-    static Map<String, Object> loadExpected(String runId, int revision) throws IOException {
-        try (var input = ComplexPojoSample.class.getResourceAsStream("/fixtures/baseline.json")) {
-            if (input == null) {
-                throw new IOException("Missing expected fixture: baseline.json");
-            }
-
-            Map<String, Object> expected = MAPPER.readValue(input, MAP_TYPE);
-            expected.put("runId", runId);
-            expected.put("revision", revision);
-            return expected;
-        }
     }
 
     static Map<String, Object> payload(Map<String, Object> returned) {

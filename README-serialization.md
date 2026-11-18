@@ -17,17 +17,17 @@ The `public static void main(String[] args)` method is in
 | Read in order | Review focus |
 | --- | --- |
 | [Order.java](src/main/java/com/multiclouddb/samples/serialization/Order.java) | What the application owns: nested POJOs and Java field types |
-| [ComplexPojoSample.java](src/main/java/com/multiclouddb/samples/serialization/ComplexPojoSample.java) | Visible inputs in `createOrder`, Jackson setup, direct mapping and SDK calls in `exercise`; small supporting methods in the same file |
+| [ComplexPojoSample.java](src/main/java/com/multiclouddb/samples/serialization/ComplexPojoSample.java) | Visible `ORDER_JSON` at the top, Jackson setup, direct mapping and SDK calls in `exercise`; small supporting methods in the same file |
 | [ConfigLoader.java](src/main/java/com/multiclouddb/samples/ConfigLoader.java) | Existing shared properties loader used by the other samples |
 
 Short walkthrough: configure your live test target, follow one original order into
 `MAPPER.convertValue`, and compare its returned Map and restored POJO to the
-JSON fixture. Follow `exercise` from top to bottom:
+original input. Follow `exercise` from top to bottom:
 `create`, `read`/restore, replacement `update`, full `upsert`,
 partition-scoped `query`/restore, and owned-key cleanup.
 There are no deliberate error probes, metadata demonstrations or separate helper classes.
-`run` names the command argument `provider`; required-property checks, expected JSON
-loading and comparisons are methods in the same file.
+`run` names the command argument `provider`; input creation, required-property checks
+and comparisons are methods in the same file.
 Jackson's tree comparison handles nested structure; a small numeric comparator
 accepts equal values across Java number types without rounding or tolerance.
 
@@ -41,8 +41,7 @@ remain separate decisions.
 | File under `src/main/` | Purpose |
 | --- | --- |
 | `java/com/multiclouddb/samples/serialization/Order.java` | Application POJOs (Java 17 records): order, customer/address, line items and enum |
-| `resources/fixtures/baseline.json` | Independent, visible expected document for the ordinary case |
-| `java/com/multiclouddb/samples/serialization/ComplexPojoSample.java` | Edit inputs in `createOrder`; direct Jackson mapping and public SDK create/read/update/upsert/query/delete workflow |
+| `java/com/multiclouddb/samples/serialization/ComplexPojoSample.java` | Edit the `ORDER_JSON` text block at the top; direct Jackson mapping and public SDK create/read/update/upsert/query/delete workflow |
 
 The sample uses **one complex order fixture with Jackson (one run)**.
 The purpose is complex POJO mapping and public SDK CRUD/query. The order contains a nested
@@ -50,13 +49,16 @@ customer/address, `List<LineItem>`, string and nullable Maps, enum, nanosecond
 `Instant`, `LocalDate`, null `note`/`giftMessage`, deliberately **absent** `coupon`,
 an empty list, `long`, `BigInteger`, and `BigDecimal`. Baseline numeric values are
 `12345`, `42`, and `125.50`; line-item prices are `50.25` and `25.00`.
-`createOrder(runId, revision)` in `ComplexPojoSample.java` constructs the visible order.
+`createOrder(runId, revision)` reads `ORDER_JSON`, sets the runtime run ID and
+revision, and converts it to `Order`. The source JSON makes the nested input
+easy to review; how a real application originally creates its POJO is not an SDK concern.
 There are no serializer interfaces/factories, scenario selectors, numeric-limit
 probes, or numeric string-workaround fields.
 
-Expected JSON is hand-authored, not generated from the outgoing Map or returned POJO.
-Only runtime `runId` and workflow `revision` are substituted. Edit both constructor
-inputs and expected JSON when intentionally changing the order.
+There is one hand-authored JSON input, not a separate expected-data file or
+duplicate constructor literals. The live sample compares returned Maps and POJOs
+with the corresponding original inputs. Offline tests additionally compare
+the POJO's mapped representation with the raw JSON to catch lost or changed fields.
 
 ## Build the exact SDK and sample (Windows PowerShell)
 
@@ -122,8 +124,8 @@ profile-selected `CursorSerialization` helpers adapt the incompatible released/P
 signatures without reflective fallbacks, in `src/sdk-released/java` and `src/sdk-pr/java`.
 The POJO sample itself lives alongside the other apps in `src/main/java`; it is excluded
 from the default released-SDK build because it requires the PR's Map API.
-The `serialization-pr` profile includes it, packages `src/main/resources/fixtures`,
-and uses `src/main/resources/serialization/logback.xml` as its root logging config
+The `serialization-pr` profile includes it and uses
+`src/main/resources/serialization/logback.xml` as its root logging config
 to suppress potentially sensitive native diagnostics. The other apps' default logging
 configuration is unchanged. Always clean when switching profiles.
 
@@ -142,7 +144,7 @@ $LASTEXITCODE
 
 The app prints only test `PASS` statements and errors. It does not dump POJOs,
 Maps, runtime types or startup details. Inputs remain visible and editable in
-`Order.java`, `ComplexPojoSample.createOrder` and `fixtures/baseline.json`.
+`Order.java` and the `ORDER_JSON` text block in `ComplexPojoSample.java`.
 There is no preview mode. Missing arguments fail with usage instead of connecting.
 The build's offline unit tests remain separate from this live workflow.
 
@@ -343,7 +345,7 @@ environment.
 
 The sample calls the public SDK:
 **create -> read -> update -> read -> upsert -> query -> delete**.
-It compares reads, queries and restored POJOs to independent expected data.
+It compares reads, queries and restored POJOs to the corresponding original inputs.
 Successful checks print `PASS`; document values are included only in mismatch errors.
 
 The deliberate small `update` body contains only order ID, run ID, revision and
@@ -505,7 +507,7 @@ live account and is intentionally not part of this offline/local verification.
 
 ### Team review checklist
 
-- Follow a visible POJO through customer Map conversion, each public CRUD/query call, and POJO restoration against independent expected data.
+- Follow the visible JSON input into a POJO, through customer Map conversion and each public CRUD/query call, then compare the restored POJO with the original.
 - Review required setup/boilerplate and failure-path code in the three linked files; note unclear ownership or surprising defaults.
 - Inspect nested objects/lists/maps, enums, dates, and null versus missing. Numeric limits are outside this sample's scope; do not accept coercion as a hidden fix.
 - Confirm replacement `update` versus app-side read/merge/upsert, including concurrency limitations.
@@ -514,7 +516,7 @@ live account and is intentionally not part of this offline/local verification.
 
 ## Evidence and limits
 
-The offline suite checks Jackson mapping against the independent fixture, missing/null
+The offline suite checks Jackson POJO mapping against the raw inline JSON, missing/null
 and value mismatch detection, provider argument and target validation, bounded
 partition query pagination, and cleanup ownership/failure paths. Public SDK calls
 in orchestration unit tests use an explicitly labeled in-memory test double:

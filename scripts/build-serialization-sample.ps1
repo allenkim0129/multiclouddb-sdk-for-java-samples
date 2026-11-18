@@ -64,7 +64,7 @@ try {
             '-pl', ($modules.Keys -join ','), '-am', 'clean', 'install',
             '-DskipTests', '-Dmaven.javadoc.skip=true') + $versionArgs)
 
-    # This profile packages synthetic fixtures/UI assets, never local credential configs.
+    # This profile packages UI assets and safe logging, never local credential configs.
     Invoke-Checked 'mvn' (@('-B', '-ntp', '-Pserialization-pr', $localRepoArg, 'clean', 'package',
             'org.apache.maven.plugins:maven-dependency-plugin:3.8.1:copy-dependencies',
             '-DincludeGroupIds=com.microsoft.multiclouddb',

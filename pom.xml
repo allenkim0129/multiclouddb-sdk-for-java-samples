@@ -217,7 +217,6 @@
                     <resource>
                         <directory>src/main/resources</directory>
                         <includes>
-                            <include>fixtures/**</include>
                             <include>static/**</include>
                         </includes>
                     </resource>
