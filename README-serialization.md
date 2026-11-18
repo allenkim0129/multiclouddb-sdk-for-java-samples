@@ -366,12 +366,13 @@ Exit **0** means all executed checks passed. Exit **1** means at least one opera
 comparison, or cleanup failed. An exception or assertion failure stops the workflow's later
 steps, so do not infer those steps ran from the overall command completing.
 
-After **confirmed successful create**, a `try-with-resources` cleanup action deletes
+After **confirmed successful create**, a `finally` block deletes
 only its exact partitionKey + sortKey/id, on success or failure.
 `PASS delete` means the SDK delete call completed; the sample does not add a separate
 post-delete polling loop.
-If cleanup also fails, Java keeps the original exception and adds the cleanup error
-as a suppressed exception. The client is closed by a separate `try-with-resources`.
+If both the workflow and deletion fail, the deletion exception replaces the original
+exception under normal Java `finally` semantics. The client is still closed by
+`try-with-resources`.
 A conflict or otherwise
 unconfirmed create is never blindly deleted. Ambiguous writes, failed cleanup,
 Ctrl+C, process termination, or machine loss can leave data. On a caught workflow

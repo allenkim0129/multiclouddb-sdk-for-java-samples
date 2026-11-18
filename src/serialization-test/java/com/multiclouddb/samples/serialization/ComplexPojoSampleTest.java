@@ -242,7 +242,7 @@ class ComplexPojoSampleTest {
     }
 
     @Test
-    void cleanupFailureIsPreservedWithoutReplacingOriginalFailure() {
+    void finallyPropagatesDeleteFailureWhenReadAlsoFails() {
         IllegalStateException readFailure = new IllegalStateException("read failed");
         IllegalStateException deleteFailure = new IllegalStateException("delete failed");
         List<String> operations = new ArrayList<>();
@@ -258,8 +258,8 @@ class ComplexPojoSampleTest {
 
         var thrown = assertThrows(IllegalStateException.class, () ->
                 new ComplexPojoSample().exercise(client, new ResourceAddress("db", "orders"), "own-run"));
-        assertSame(readFailure, thrown);
-        assertArrayEquals(new Throwable[]{deleteFailure}, thrown.getSuppressed());
+        assertSame(deleteFailure, thrown);
+        assertEquals(0, thrown.getSuppressed().length);
         assertEquals(List.of("create", "read", "delete"), operations);
     }
 

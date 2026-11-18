@@ -109,9 +109,8 @@ public final class ComplexPojoSample {
         // A failed/ambiguous create must not trigger deletion of a possibly pre-existing document.
         client.create(address, key, document);
 
-        // Register cleanup only after create succeeds. It runs even if a later check throws,
-        // and try-with-resources preserves the original error if cleanup also fails.
-        try (AutoCloseable ownedDocument = () -> client.delete(address, key)) {
+        // Enter the cleanup scope only after create succeeds.
+        try {
             System.out.println("PASS create");
 
             // Read the stored Map and restore the complex Order directly with Jackson.
@@ -142,6 +141,9 @@ public final class ComplexPojoSample {
             checkEquals("query vs upsert input", fullDocument, payload(row));
             Order queried = MAPPER.convertValue(payload(row), Order.class);
             checkEquals("restored query POJO", fullOrder, queried);
+        } finally {
+            // Delete our document even if a read, write or comparison fails.
+            client.delete(address, key);
         }
 
         System.out.println("PASS delete");
