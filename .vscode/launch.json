@@ -48,6 +48,45 @@
             ],
             "console": "integratedTerminal",
             "preLaunchTask": "Build pinned serialization sample"
+        },
+        {
+            "type": "java",
+            "name": "Complex POJO - Dynamo (AWS profile, live)",
+            "request": "launch",
+            "mainClass": "com.multiclouddb.samples.serialization.ComplexPojoSample",
+            "args": ["dynamo"],
+            "cwd": "${workspaceFolder}",
+            "env": {
+                "AWS_PROFILE": "${input:dynamoAwsProfile}",
+                "AWS_ACCESS_KEY_ID": "",
+                "AWS_SECRET_ACCESS_KEY": "",
+                "AWS_SESSION_TOKEN": "",
+                "AWS_SECURITY_TOKEN": ""
+            },
+            "javaExec": "${env:JAVA_HOME}/bin/java",
+            "windows": {
+                "javaExec": "${env:JAVA_HOME}\\bin\\java.exe"
+            },
+            "classPaths": [
+                "${workspaceFolder}/target/multiclouddb-samples-1.0.0-SNAPSHOT-jar-with-dependencies.jar",
+                "${workspaceFolder}/src/main/resources"
+            ],
+            "sourcePaths": [
+                "${workspaceFolder}/src/main/java",
+                "${workspaceFolder}/.local/serialization-sdk/multiclouddb-api/src/main/java",
+                "${workspaceFolder}/.local/serialization-sdk/multiclouddb-provider-cosmos/src/main/java",
+                "${workspaceFolder}/.local/serialization-sdk/multiclouddb-provider-dynamo/src/main/java"
+            ],
+            "console": "integratedTerminal",
+            "preLaunchTask": "Build pinned serialization sample"
+        }
+    ],
+    "inputs": [
+        {
+            "id": "dynamoAwsProfile",
+            "type": "promptString",
+            "description": "AWS shared-credentials profile for the Dynamo live sample (profile name only, not a key)",
+            "default": "pojo-iam"
         }
     ]
 }

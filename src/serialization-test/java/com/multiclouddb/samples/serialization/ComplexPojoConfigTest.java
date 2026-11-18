@@ -2,8 +2,11 @@
 // Licensed under the MIT License.
 package com.multiclouddb.samples.serialization;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import software.amazon.awssdk.auth.credentials.DefaultCredentialsProvider;
 
 import java.io.File;
 import java.nio.charset.StandardCharsets;
@@ -92,6 +95,70 @@ class ComplexPojoConfigTest {
                         + "multiclouddb.connection.region=\n");
         String output = rejected(List.of("dynamo"), Map.of());
         assertTrue(output.contains("Missing required property: multiclouddb.connection.region"), output);
+    }
+
+    @Test
+    void debugProfileOverridesStaleEnvironmentCredentialsWithoutCloudAccess() throws Exception {
+        JsonNode launch = new ObjectMapper().readTree(Path.of(".vscode/launch.json").toFile());
+        JsonNode profileEnvironment = null;
+        for (JsonNode configuration : launch.path("configurations")) {
+            if (configuration.path("name").asText().equals("Complex POJO - Dynamo (AWS profile, live)")) {
+                profileEnvironment = configuration.path("env");
+            }
+        }
+        assertNotNull(profileEnvironment);
+        Path credentials = directory.resolve("credentials");
+        Files.writeString(credentials, """
+                [synthetic-profile]
+                aws_access_key_id = synthetic-profile-key
+                aws_secret_access_key = synthetic-profile-secret
+                """);
+        Path awsConfig = directory.resolve("config");
+        Files.writeString(awsConfig, "");
+        String executable = System.getProperty("os.name").startsWith("Windows") ? "java.exe" : "java";
+        ProcessBuilder builder = new ProcessBuilder(
+                Path.of(System.getProperty("java.home"), "bin", executable).toString(),
+                "-Dfile.encoding=UTF-8", "-Dsun.stdout.encoding=UTF-8", "-Dsun.stderr.encoding=UTF-8",
+                "-cp", System.getProperty("surefire.test.class.path", System.getProperty("java.class.path")),
+                ProfileCredentialsProbe.class.getName());
+        // Isolate the child from real credentials, JVM overrides, and metadata endpoints.
+        builder.environment().keySet().removeIf(name -> {
+            String upper = name.toUpperCase(java.util.Locale.ROOT);
+            return upper.startsWith("AWS_")
+                    || List.of("JAVA_TOOL_OPTIONS", "JDK_JAVA_OPTIONS", "_JAVA_OPTIONS").contains(upper);
+        });
+        builder.environment().putAll(Map.of(
+                "AWS_PROFILE", "wrong-profile",
+                "AWS_ACCESS_KEY_ID", "stale-key",
+                "AWS_SECRET_ACCESS_KEY", "stale-secret",
+                "AWS_SESSION_TOKEN", "stale-token",
+                "AWS_SHARED_CREDENTIALS_FILE", credentials.toString(),
+                "AWS_CONFIG_FILE", awsConfig.toString(),
+                "AWS_EC2_METADATA_DISABLED", "true"));
+        profileEnvironment.fields().forEachRemaining(entry -> builder.environment().put(entry.getKey(),
+                entry.getValue().asText().replace("${input:dynamoAwsProfile}", "synthetic-profile")));
+        Path log = directory.resolve("debug-credentials.log");
+        Process process = builder.redirectErrorStream(true).redirectOutput(log.toFile()).start();
+        try {
+            assertTrue(process.waitFor(30, TimeUnit.SECONDS), "Credential resolution timed out");
+        } finally {
+            if (process.isAlive()) {
+                process.destroyForcibly();
+            }
+        }
+        assertEquals(0, process.exitValue(), Files.readString(log, StandardCharsets.UTF_8));
+    }
+
+    public static final class ProfileCredentialsProbe {
+        public static void main(String[] args) {
+            try (var provider = DefaultCredentialsProvider.builder().build()) {
+                var credentials = provider.resolveCredentials();
+                if (!credentials.accessKeyId().equals("synthetic-profile-key")
+                        || !credentials.secretAccessKey().equals("synthetic-profile-secret")) {
+                    throw new IllegalStateException("Selected credentials did not come from the requested profile");
+                }
+            }
+        }
     }
 
     // Every invocation deliberately fails validation before creating any SDK client.

@@ -174,6 +174,23 @@ language-server runtime is separate from the JDK 17 used to build/run this sampl
 3. Optionally set a breakpoint on `client.create(...)` in `ComplexPojoSample.java`.
 4. Press **F5** to debug, or **Ctrl+F5** to run without debugging.
 
+For an IAM-user profile created with `aws configure --profile pojo-iam`, select
+**Complex POJO - Dynamo (AWS profile, live)** instead. F5 asks for the profile name
+(`pojo-iam` by default), not credentials. This launch sets `AWS_PROFILE` explicitly
+and blanks inherited AWS access-key/session-token environment variables for the
+debuggee, so stale environment credentials cannot override the selected profile.
+The SDK reads the credentials from your local AWS shared credentials file; no
+secrets belong in `launch.json`. Remove `multiclouddb.auth.accessKeyId` and
+`multiclouddb.auth.secretAccessKey` from the Dynamo properties when using a profile:
+those explicit SDK settings override the default credential chain.
+
+Setting `$env:AWS_PROFILE` or credentials in an integrated terminal does **not**
+change the environment of the already-running VS Code process or its F5 launches.
+The original **Complex POJO - Dynamo (live)** configuration remains available for
+intentionally inherited environment/role credentials. The profile launch does not
+add SSO modules to the pinned Java classpath; use an IAM-user shared-credentials
+profile for the workflow described here.
+
 The pre-launch task runs `scripts/build-serialization-sample.ps1` to build and
 verify the pinned SDK and sample before each launch. This can take several minutes;
 the build itself is offline with respect to your cloud accounts. If it fails,
