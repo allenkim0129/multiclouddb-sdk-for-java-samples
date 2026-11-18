@@ -36,7 +36,7 @@ class ComplexPojoSampleTest {
     @Test
     void ordinaryNumbersSurviveUntypedJsonReadbackWithoutRelaxingComparisons() throws Exception {
         var untyped = new ObjectMapper();
-        Order input = OrderFixtures.create("unit-test", 1);
+        Order input = createOrder("unit-test", 1);
         Map<String, Object> returned = untyped.readValue(
                 untyped.writeValueAsString(MAPPER.convertValue(input, MAP_TYPE)), MAP_TYPE);
         Map<String, Object> expected = loadExpected("unit-test", 1);
@@ -49,7 +49,7 @@ class ComplexPojoSampleTest {
 
     @Test
     void jacksonMatchesIndependentFixtureAndRestoresJavaTypes() throws Exception {
-        Order input = OrderFixtures.create("unit-test", 1);
+        Order input = createOrder("unit-test", 1);
         Map<String, Object> expected = loadExpected("unit-test", 1);
         Map<String, Object> document = MAPPER.convertValue(input, MAP_TYPE);
         assertTrue(documentsEqual(expected, document));

@@ -12,13 +12,12 @@ without an additional confirmation flag. Building does not run the live app.**
 The `public static void main(String[] args)` method is in
 `src/main/java/com/multiclouddb/samples/serialization/ComplexPojoSample.java`.
 
-## Team review: start with these four customer files
+## Team review: start with these three customer files
 
 | Read in order | Review focus |
 | --- | --- |
 | [Order.java](src/main/java/com/multiclouddb/samples/serialization/Order.java) | What the application owns: nested POJOs and Java field types |
-| [OrderFixtures.java](src/main/java/com/multiclouddb/samples/serialization/OrderFixtures.java) | Visible synthetic inputs; compare with the [independent JSON fixture](src/main/resources/fixtures/baseline.json) |
-| [ComplexPojoSample.java](src/main/java/com/multiclouddb/samples/serialization/ComplexPojoSample.java) | Jackson setup, direct mapping and SDK calls in `exercise`; small supporting methods at the bottom of the same file |
+| [ComplexPojoSample.java](src/main/java/com/multiclouddb/samples/serialization/ComplexPojoSample.java) | Visible inputs in `createOrder`, Jackson setup, direct mapping and SDK calls in `exercise`; small supporting methods in the same file |
 | [ConfigLoader.java](src/main/java/com/multiclouddb/samples/ConfigLoader.java) | Existing shared properties loader used by the other samples |
 
 Short walkthrough: configure your live test target, follow one original order into
@@ -42,9 +41,8 @@ remain separate decisions.
 | File under `src/main/` | Purpose |
 | --- | --- |
 | `java/com/multiclouddb/samples/serialization/Order.java` | Application POJOs (Java 17 records): order, customer/address, line items and enum |
-| `java/com/multiclouddb/samples/serialization/OrderFixtures.java` | Explicit constructors and numeric/date literals; edit inputs here |
 | `resources/fixtures/baseline.json` | Independent, visible expected document for the ordinary case |
-| `java/com/multiclouddb/samples/serialization/ComplexPojoSample.java` | Direct Jackson mapping and public SDK create/read/update/upsert/query/delete workflow |
+| `java/com/multiclouddb/samples/serialization/ComplexPojoSample.java` | Edit inputs in `createOrder`; direct Jackson mapping and public SDK create/read/update/upsert/query/delete workflow |
 
 The sample uses **one complex order fixture with Jackson (one run)**.
 The purpose is complex POJO mapping and public SDK CRUD/query. The order contains a nested
@@ -52,7 +50,7 @@ customer/address, `List<LineItem>`, string and nullable Maps, enum, nanosecond
 `Instant`, `LocalDate`, null `note`/`giftMessage`, deliberately **absent** `coupon`,
 an empty list, `long`, `BigInteger`, and `BigDecimal`. Baseline numeric values are
 `12345`, `42`, and `125.50`; line-item prices are `50.25` and `25.00`.
-`OrderFixtures.create(runId, revision)` constructs the visible order.
+`createOrder(runId, revision)` in `ComplexPojoSample.java` constructs the visible order.
 There are no serializer interfaces/factories, scenario selectors, numeric-limit
 probes, or numeric string-workaround fields.
 
@@ -144,7 +142,7 @@ $LASTEXITCODE
 
 The app prints only test `PASS` statements and errors. It does not dump POJOs,
 Maps, runtime types or startup details. Inputs remain visible and editable in
-`Order.java`, `OrderFixtures.java` and `fixtures/baseline.json`.
+`Order.java`, `ComplexPojoSample.createOrder` and `fixtures/baseline.json`.
 There is no preview mode. Missing arguments fail with usage instead of connecting.
 The build's offline unit tests remain separate from this live workflow.
 
@@ -508,7 +506,7 @@ live account and is intentionally not part of this offline/local verification.
 ### Team review checklist
 
 - Follow a visible POJO through customer Map conversion, each public CRUD/query call, and POJO restoration against independent expected data.
-- Review required setup/boilerplate and failure-path code in the four linked files; note unclear ownership or surprising defaults.
+- Review required setup/boilerplate and failure-path code in the three linked files; note unclear ownership or surprising defaults.
 - Inspect nested objects/lists/maps, enums, dates, and null versus missing. Numeric limits are outside this sample's scope; do not accept coercion as a hidden fix.
 - Confirm replacement `update` versus app-side read/merge/upsert, including concurrency limitations.
 - Review missing/stale reads, immediate failure on errors, and exact-key cleanup.

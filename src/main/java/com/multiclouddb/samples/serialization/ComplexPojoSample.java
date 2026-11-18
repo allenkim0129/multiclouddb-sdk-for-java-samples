@@ -18,6 +18,10 @@ import com.multiclouddb.api.ResourceAddress;
 import com.multiclouddb.samples.ConfigLoader;
 
 import java.io.IOException;
+import java.math.BigDecimal;
+import java.math.BigInteger;
+import java.time.Instant;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -75,8 +79,9 @@ public final class ComplexPojoSample {
     void exercise(MulticloudDbClient client, ResourceAddress address, String runId) throws Exception {
         // One unique partition per run. Cleanup may delete only this exact, confirmed-created key.
         MulticloudDbKey key = MulticloudDbKey.of(runId, "jackson-baseline");
+
         // Compare Jackson's output with independent JSON before writing anything.
-        Order original = OrderFixtures.create(runId, 1);
+        Order original = createOrder(runId, 1);
         Map<String, Object> expected = loadExpected(runId, 1);
         Map<String, Object> document = MAPPER.convertValue(original, MAP_TYPE);
         checkEquals("POJO -> Map before I/O", expected, document);
@@ -106,7 +111,7 @@ public final class ComplexPojoSample {
             checkEquals("update replaces the body", replacement, payload(afterUpdate));
 
             // Put the full POJO back with upsert. Revision 3 distinguishes it from earlier writes.
-            Order fullOrder = OrderFixtures.create(runId, 3);
+            Order fullOrder = createOrder(runId, 3);
             Map<String, Object> fullDocument = MAPPER.convertValue(fullOrder, MAP_TYPE);
             client.upsert(address, key, fullDocument);
 
@@ -124,6 +129,22 @@ public final class ComplexPojoSample {
     }
 
     // Everything below supports the walkthrough above; no separate helper classes are needed.
+
+    static Order createOrder(String runId, int revision) {
+        // Visible synthetic inputs; edit alongside resources/fixtures/baseline.json.
+        // Map.of rejects nulls. Include giftMessage as null and leave coupon absent.
+        Map<String, Object> optionalFields = new LinkedHashMap<>();
+        optionalFields.put("giftMessage", null);
+
+        return new Order("synthetic-order-baseline", runId, revision, Order.Status.NEW,
+                new Order.Customer("Synthetic Customer",
+                        new Order.Address("Example City", "00123")),
+                List.of(new Order.LineItem("SYNTHETIC-A", 2, new BigDecimal("50.25"), List.of("demo", "fragile")),
+                        new Order.LineItem("SYNTHETIC-B", 1, new BigDecimal("25.00"), List.of())),
+                Map.of("channel", "sample", "region", "test"), optionalFields,
+                Instant.parse("2026-01-02T03:04:05.123456789Z"), LocalDate.parse("2026-01-05"),
+                null, 12345L, new BigInteger("42"), new BigDecimal("125.50"));
+    }
 
     private static void checkRequiredProperties(ConfigLoader.AppConfig config, String provider) {
         List<String> names = new ArrayList<>(List.of("multiclouddb.provider",
