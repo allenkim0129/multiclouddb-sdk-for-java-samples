@@ -120,19 +120,17 @@ public final class ComplexPojoSample {
             Order restored = MAPPER.convertValue(payload, Order.class);
             checkEquals("restored POJO", original, restored);
 
-            // Order is an immutable record: copy the restored values, changing only status/revision.
-            // update replaces the full document, so map the complete Order rather than a partial body.
-            Order updated = new Order(restored.orderId(), restored.runId(), 2, Order.Status.PAID,
-                    restored.customer(), restored.items(), restored.labels(), restored.optionalFields(),
-                    restored.placedAt(), restored.deliveryDate(), restored.note(),
-                    restored.sequence(), restored.externalNumber(), restored.total());
-            Map<String, Object> updatedDocument = MAPPER.convertValue(updated, MAP_TYPE);
+            // Modify the restored POJO directly, then map the complete object for update.
+            // update replaces the full document, so keep all the other fields.
+            restored.setStatus(Order.Status.PAID);
+            restored.setRevision(2);
+            Map<String, Object> updatedDocument = MAPPER.convertValue(restored, MAP_TYPE);
             client.update(address, key, updatedDocument);
 
             Map<String, Object> afterUpdate = awaitRead(client, address, key, 2);
             checkEquals("update vs modified POJO", updatedDocument, payload(afterUpdate));
             Order restoredUpdate = MAPPER.convertValue(payload(afterUpdate), Order.class);
-            checkEquals("restored updated POJO", updated, restoredUpdate);
+            checkEquals("restored updated POJO", restored, restoredUpdate);
 
             // Alternatively, edit the returned Map without converting it to a POJO.
             // payload makes a mutable copy without provider metadata; all business fields remain.
@@ -212,7 +210,8 @@ public final class ComplexPojoSample {
     }
 
     private static void checkEquals(String label, Object expected, Object actual) {
-        check(documentsEqual(expected, actual), label + ": expected=" + expected + ", actual=" + actual);
+        check(documentsEqual(expected, actual), label + ": expected=" + MAPPER.valueToTree(expected)
+                + ", actual=" + MAPPER.valueToTree(actual));
         System.out.println("PASS " + label);
     }
 

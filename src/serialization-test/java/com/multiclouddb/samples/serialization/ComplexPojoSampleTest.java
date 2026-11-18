@@ -43,7 +43,7 @@ class ComplexPojoSampleTest {
         assertTrue(documentsEqual(expected, returned));
         Order restored = MAPPER.convertValue(returned, Order.class);
         assertTrue(documentsEqual(expected, MAPPER.convertValue(restored, MAP_TYPE)));
-        returned.put("sequence", input.sequence() + 1);
+        returned.put("sequence", input.getSequence() + 1);
         assertFalse(documentsEqual(expected, returned));
     }
 
@@ -54,14 +54,14 @@ class ComplexPojoSampleTest {
         Map<String, Object> expected = inputDocument(runId, 3);
         Map<String, Object> document = MAPPER.convertValue(input, MAP_TYPE);
         assertTrue(documentsEqual(expected, document));
-        assertEquals(runId, input.runId());
-        assertEquals(3, input.revision());
+        assertEquals(runId, input.getRunId());
+        assertEquals(3, input.getRevision());
         Order restored = MAPPER.convertValue(document, Order.class);
-        assertEquals(input, restored);
+        assertTrue(documentsEqual(input, restored));
         assertTrue(document.containsKey("note"));
         assertNull(document.get("note"));
-        assertTrue(restored.optionalFields().containsKey("giftMessage"));
-        assertFalse(restored.optionalFields().containsKey("coupon"));
+        assertTrue(restored.getOptionalFields().containsKey("giftMessage"));
+        assertFalse(restored.getOptionalFields().containsKey("coupon"));
     }
 
     @Test
@@ -131,8 +131,8 @@ class ComplexPojoSampleTest {
                         assertTrue(documentsEqual(expectedUpdate, document),
                                 "Both update styles must preserve every unedited field");
                         Order updated = MAPPER.convertValue(document, Order.class);
-                        assertEquals(Order.Status.PAID, updated.status());
-                        assertEquals(nextRevision, updated.revision());
+                        assertEquals(Order.Status.PAID, updated.getStatus());
+                        assertEquals(nextRevision, updated.getRevision());
                     }
                     document.put("partitionKey", key.partitionKey());
                     document.put("sortKey", key.sortKey());
@@ -250,7 +250,7 @@ class ComplexPojoSampleTest {
         AssertionError error = assertThrows(AssertionError.class, () ->
                 new ComplexPojoSample().exercise(client, new ResourceAddress("db", "orders"), "own-run"));
         assertTrue(error.getMessage().contains("read vs original"));
-        assertTrue(error.getMessage().contains("note=unexpected"));
+        assertTrue(error.getMessage().contains("\"note\":\"unexpected\""));
         assertEquals(List.of("create", "read", "delete"), operations);
     }
 

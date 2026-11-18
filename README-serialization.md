@@ -40,7 +40,7 @@ remain separate decisions.
 
 | File under `src/main/` | Purpose |
 | --- | --- |
-| `java/com/multiclouddb/samples/serialization/Order.java` | Application POJOs (Java 17 records): order, customer/address, line items and enum |
+| `java/com/multiclouddb/samples/serialization/Order.java` | Mutable POJOs with getters/setters: order, customer/address, line items and enum |
 | `java/com/multiclouddb/samples/serialization/ComplexPojoSample.java` | Edit the `ORDER_JSON` text block at the top; direct Jackson mapping and public SDK create/read/update/upsert/query/delete workflow |
 
 The sample uses **one complex order fixture with Jackson (one run)**.
@@ -348,9 +348,9 @@ The sample calls the public SDK:
 It compares reads, queries and restored POJOs to the corresponding original inputs.
 Successful checks print `PASS`; document values are included only in mismatch errors.
 
-The sample copies the restored `Order`, changes its status to `PAID` and revision
-to `2`, then converts that complete POJO to a Map for `update()`. `Order` is an
-immutable record, so this uses a new instance rather than setters.
+The sample calls `restored.setStatus(Order.Status.PAID)` and `restored.setRevision(2)`,
+then converts that complete POJO to a Map for `update()`. `Order` and its nested
+models are regular mutable POJOs with getters/setters, not records.
 **Current Cosmos/Dynamo update replaces the entire document**, not selected fields;
 the readback verifies that all other fields are preserved.
 
