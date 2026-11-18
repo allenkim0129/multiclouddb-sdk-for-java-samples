@@ -6,6 +6,8 @@ It does not change the SDK, promise a new numeric contract, or implement partial
 Only synthetic orders are used. **The app is live-only and requires an explicit
 provider and configured test target. Running it performs real database operations
 without an additional confirmation flag. Building does not run the live app.**
+Startup creates missing database/container/table resources in the configured account.
+Those resources remain after the sample removes its test documents.
 
 **App name:** Complex POJO Serialization. **Main class:**
 [`com.multiclouddb.samples.serialization.ComplexPojoSample`](src/main/java/com/multiclouddb/samples/serialization/ComplexPojoSample.java).
@@ -162,7 +164,7 @@ installed. Set `JAVA_HOME` to JDK 17 and put Java, Maven and Git on `PATH`;
 restart VS Code after changing environment variables. The Java extension's
 language-server runtime is separate from the JDK 17 used to build/run this sample.
 
-1. Configure your existing test target in
+1. Configure your test account and resource names in
    `src/main/resources/serialization-cosmos-cloud.properties` (or the Dynamo
    equivalent), as described below. Keep credentials out of `.vscode` files.
 2. Open **Run and Debug** (`Ctrl+Shift+D`) and select
@@ -192,7 +194,7 @@ Java: Clean Java Language Server Workspace** and confirm the restart. Wait for
 Java project import to finish. Do not select **Run Java** to fix a stale import;
 use the named launch configurations above after rebuilding.
 
-**F5 starts real database operations after the build succeeds.** Use only your
+**F5 starts real resource provisioning and database operations after the build succeeds.** Use only your
 configured disposable test target. Let execution finish so `finally` can delete
 the test document; forcibly stopping the debugger can leave that document behind.
 Output appears in the integrated terminal. No live execution is part of adding
@@ -220,17 +222,29 @@ does not guarantee decimal scale preservation. Missing keys differ from explicit
 
 ## Live prerequisites and safety
 
-**You choose and provision the targets beforehand.** Use a disposable test
-container/table in your own account, not production data. This sample never calls
-`ensureDatabase`, `ensureContainer`, or any table/database create/delete operation.
-Live calls cost RU/request capacity and require your account's networking/firewall
+**You choose the account and test resource names in properties.** Startup calls
+`client.ensureDatabase(address.database())` followed by `client.ensureContainer(address)`.
+Cosmos creates missing databases/containers; DynamoDB's database call is a no-op,
+and its container call creates `<database>__<collection>` with on-demand billing
+and waits for the table to become active. Existing resources are reused; the sample
+does not migrate incompatible keys or drop resources.
+
+Use disposable test targets, not production data. **Cleanup deletes only this run's
+documents, never a database, container or table**, including resources created during
+initialization. Resources can remain even if initialization or a later step fails.
+Review and remove them separately when no longer needed. Provisioning can incur
+ongoing resource charges; live calls also cost RU/request capacity and require networking/firewall
 access. There is no unlimited polling or unscoped table scan, but SDK retries and
 network timeouts can add latency/requests; this is not a hard monetary/time budget.
 
-| Provider | Required existing schema | Data permissions |
+| Provider | Created schema / required schema if reusing resources | Permissions |
 | --- | --- | --- |
-| Cosmos DB for NoSQL | Database + container, partition key path **`/partitionKey`**, normal `id` | Read metadata plus item create/read/replace/upsert/query/delete on the test container; e.g. appropriately scoped Cosmos DB data-plane RBAC |
-| DynamoDB | Physical table **`<database>__<collection>`** from the properties file, String hash key **`partitionKey`**, String range key **`sortKey`** | `dynamodb:PutItem`, `GetItem`, `Query`, `DeleteItem` on that table; no Scan/CreateTable/DeleteTable needed |
+| Cosmos DB for NoSQL | Database + container, partition key path **`/partitionKey`**, normal `id` | Account key authorized for database/container creation and item CRUD/query; account metadata-write restrictions must permit provisioning |
+| DynamoDB | Physical table **`<database>__<collection>`**, String hash key **`partitionKey`**, String range key **`sortKey`**, `PAY_PER_REQUEST` for new tables | `dynamodb:DescribeTable`, `CreateTable`, `PutItem`, `GetItem`, `DeleteItem`, and query permissions (`PartiQLSelect` for the translated query path); no DeleteTable needed |
+
+Initialization errors propagate immediately, before document writes. Resource creation
+uses the pinned SDK's provider defaults; it does not create cloud accounts or configure
+custom throughput, indexes or networking.
 
 The POJO sample uses the same **`ConfigLoader` and `.properties` format as the other
 samples**, with no separate settings class or `MCDB_*` environment mapping.
@@ -377,7 +391,7 @@ $env:AWS_ACCESS_KEY_ID = $session.AccessKeyId
 $env:AWS_SECRET_ACCESS_KEY = $session.SecretAccessKey
 $env:AWS_SESSION_TOKEN = $session.SessionToken
 $session = $null
-# Existing physical table: your-test-db__your-test-orders
+# Physical table (created if missing): your-test-db__your-test-orders
 try {
     java -cp $cp $main dynamo
     $result = $LASTEXITCODE
@@ -394,7 +408,7 @@ environment.
 ## Read results and clean up
 
 The sample calls the public SDK:
-**create two orders -> read one by key -> POJO update -> read -> Map update -> read -> upsert -> query one by status -> delete both**.
+**ensure database/container -> create two orders -> read one by key -> POJO update -> read -> Map update -> read -> upsert -> query one by status -> delete both documents**.
 It compares reads, queries and restored POJOs to the corresponding original inputs.
 Successful checks print `PASS`; document values are included only in mismatch errors.
 
@@ -596,7 +610,7 @@ live account and is intentionally not part of this offline/local verification.
 
 The offline suite checks Jackson POJO mapping against the raw inline JSON, missing/null
 and value mismatch detection, provider argument and target validation, bounded
-partition query pagination, and cleanup ownership/failure paths. Public SDK calls
+partition query pagination, initialization ordering/failures, and document cleanup ownership/failure paths. Public SDK calls
 in orchestration unit tests use an explicitly labeled in-memory test double:
 **they do not validate native mapping or live storage**. A separate offline cursor
 round-trip checks the directly required migration of existing change-feed samples.

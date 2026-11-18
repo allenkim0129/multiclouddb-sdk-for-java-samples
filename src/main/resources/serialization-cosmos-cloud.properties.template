@@ -1,4 +1,5 @@
-# Complex POJO Serialization sample: existing Cosmos DB test resources only.
+# Complex POJO Serialization sample: Cosmos DB test resources.
+# The live sample creates the database/container if missing; resources remain after the run.
 # Copy to serialization-cosmos-cloud.properties or run scripts/configure-cosmos-sample.ps1.
 # The filled file is gitignored and excluded from Maven resources/JARs.
 # It contains a plaintext secret. Never share, force-add, or commit it.

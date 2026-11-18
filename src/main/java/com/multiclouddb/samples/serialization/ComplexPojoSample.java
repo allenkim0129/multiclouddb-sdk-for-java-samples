@@ -25,7 +25,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
-/** Order -> Jackson Map -> public SDK -> Map -> Order, using an existing Cosmos/Dynamo target. */
+/** Order -> Jackson Map -> public SDK -> Map -> Order, using a configured Cosmos/Dynamo test target. */
 public final class ComplexPojoSample {
     // Edit this synthetic input to see exactly which nested data the sample exercises.
     static final String ORDER_JSON = """
@@ -79,7 +79,7 @@ public final class ComplexPojoSample {
         String provider = args[0];
         check(provider.equals("cosmos") || provider.equals("dynamo"), "Usage: <cosmos|dynamo>");
 
-        // Use the same properties loader as the other samples; do not create any cloud resources.
+        // Use the same properties loader as the other samples.
         ConfigLoader.AppConfig config = ConfigLoader.load("serialization-" + provider + "-cloud.properties");
         checkRequiredProperties(config, provider);
         String database = config.property("multiclouddb.database");
@@ -100,6 +100,12 @@ public final class ComplexPojoSample {
     }
 
     void exercise(MulticloudDbClient client, ResourceAddress address, String runId) throws Exception {
+        // Prepare the configured test resources. Existing resources are reused, not dropped.
+        // Dynamo has no database resource: the database name is part of the physical table name.
+        client.ensureDatabase(address.database());
+        client.ensureContainer(address);
+        System.out.println("PASS initialize database and container/table");
+
         // One unique partition per run. Cleanup may delete only this exact, confirmed-created key.
         MulticloudDbKey key = MulticloudDbKey.of(runId, "jackson-baseline");
 

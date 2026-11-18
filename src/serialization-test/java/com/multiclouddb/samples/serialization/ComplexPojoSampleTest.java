@@ -102,6 +102,14 @@ class ComplexPojoSampleTest {
         store.put(unrelated, Map.of("business", "untouched"));
         var client = fake((method, args) -> {
             operations.add(method);
+            if (method.equals("ensureDatabase")) {
+                assertEquals("db", args[0]);
+                return null;
+            }
+            if (method.equals("ensureContainer")) {
+                assertEquals(new ResourceAddress("db", "orders"), args[0]);
+                return null;
+            }
             if (method.equals("query")) {
                 QueryRequest query = (QueryRequest) args[1];
                 assertEquals("own-run", query.partitionKey());
@@ -174,7 +182,7 @@ class ComplexPojoSampleTest {
         assertTrue(lines.stream().allMatch(line -> line.startsWith("PASS ") || line.startsWith("QUERY page=")),
                 lines.toString());
         assertTrue(lines.contains("QUERY page=1 diagnostics=<unavailable>"), lines.toString());
-        assertEquals(List.of("create", "create", "read",
+        assertEquals(List.of("ensureDatabase", "ensureContainer", "create", "create", "read",
                 "update", "read", "update", "read", "upsert", "query", "delete", "delete"), operations);
         assertEquals(Map.of(unrelated, Map.of("business", "untouched")), store);
     }
@@ -192,6 +200,9 @@ class ComplexPojoSampleTest {
             List<MulticloudDbKey> deleted = new ArrayList<>();
             IllegalStateException failure = new IllegalStateException("Simulated failure");
             var client = fake((method, args) -> {
+                if (method.equals("ensureDatabase") || method.equals("ensureContainer")) {
+                    return null;
+                }
                 if (method.equals("query")) {
                     throw failure;
                 }
@@ -240,7 +251,8 @@ class ComplexPojoSampleTest {
             assertEquals(createSucceeds ? "Simulated read failure" : "Simulated unconfirmed write",
                     failure.getMessage());
             assertEquals(createSucceeds
-                    ? List.of("create", "create", "read", "delete", "delete") : List.of("create"), operations);
+                    ? List.of("ensureDatabase", "ensureContainer", "create", "create", "read", "delete", "delete")
+                    : List.of("ensureDatabase", "ensureContainer", "create"), operations);
         }
     }
 
@@ -323,16 +335,22 @@ class ComplexPojoSampleTest {
     }
 
     @Test
-    void authenticationFailureStopsBeforeReadOrDelete() {
-        List<String> operations = new ArrayList<>();
-        MulticloudDbException denied = failure(MulticloudDbErrorCategory.AUTHENTICATION_FAILED, 400);
-        var client = fake((method, args) -> {
-            operations.add(method);
-            throw denied;
-        });
-        assertSame(denied, assertThrows(MulticloudDbException.class, () ->
-                new ComplexPojoSample().exercise(client, new ResourceAddress("db", "orders"), "own-run")));
-        assertEquals(List.of("create"), operations);
+    void initializationFailureStopsBeforeDocumentOperations() {
+        for (String failingOperation : List.of("ensureDatabase", "ensureContainer")) {
+            List<String> operations = new ArrayList<>();
+            MulticloudDbException denied = failure(MulticloudDbErrorCategory.AUTHENTICATION_FAILED, 400);
+            var client = fake((method, args) -> {
+                operations.add(method);
+                if (method.equals(failingOperation)) {
+                    throw denied;
+                }
+                return null;
+            });
+            assertSame(denied, assertThrows(MulticloudDbException.class, () ->
+                    new ComplexPojoSample().exercise(client, new ResourceAddress("db", "orders"), "own-run")));
+            assertEquals(failingOperation.equals("ensureDatabase")
+                    ? List.of("ensureDatabase") : List.of("ensureDatabase", "ensureContainer"), operations);
+        }
     }
 
     @Test
@@ -345,7 +363,7 @@ class ComplexPojoSampleTest {
             operations.add(method);
             return switch (method) {
                 case "read" -> reads.incrementAndGet() == 1 ? new DocumentResult(returned) : null;
-                case "create", "delete" -> null;
+                case "ensureDatabase", "ensureContainer", "create", "delete" -> null;
                 default -> throw new AssertionError("Must not continue to " + method);
             };
         });
@@ -354,7 +372,7 @@ class ComplexPojoSampleTest {
                 new ComplexPojoSample().exercise(client, new ResourceAddress("db", "orders"), "own-run"));
         assertTrue(error.getMessage().contains("read vs original"));
         assertTrue(error.getMessage().contains("\"note\":\"unexpected\""));
-        assertEquals(List.of("create", "create", "read", "delete", "delete"), operations);
+        assertEquals(List.of("ensureDatabase", "ensureContainer", "create", "create", "read", "delete", "delete"), operations);
     }
 
     @Test
@@ -365,7 +383,7 @@ class ComplexPojoSampleTest {
         var client = fake((method, args) -> {
             operations.add(method);
             return switch (method) {
-                case "create" -> null;
+                case "ensureDatabase", "ensureContainer", "create" -> null;
                 case "read" -> throw readFailure;
                 case "delete" -> throw deleteFailure;
                 default -> throw new AssertionError("Unexpected call " + method);
@@ -376,7 +394,7 @@ class ComplexPojoSampleTest {
                 new ComplexPojoSample().exercise(client, new ResourceAddress("db", "orders"), "own-run"));
         assertSame(deleteFailure, thrown);
         assertEquals(0, thrown.getSuppressed().length);
-        assertEquals(List.of("create", "create", "read", "delete", "delete"), operations);
+        assertEquals(List.of("ensureDatabase", "ensureContainer", "create", "create", "read", "delete", "delete"), operations);
     }
 
     @Test
@@ -387,7 +405,7 @@ class ComplexPojoSampleTest {
             var client = fake((method, args) -> {
                 operations.add(method);
                 return switch (method) {
-                    case "create", "delete" -> null;
+                    case "ensureDatabase", "ensureContainer", "create", "delete" -> null;
                     case "read" -> missing ? null : new DocumentResult(stale);
                     default -> throw new AssertionError("Must not continue to " + method);
                 };
@@ -396,7 +414,7 @@ class ComplexPojoSampleTest {
             AssertionError error = assertThrows(AssertionError.class, () ->
                     new ComplexPojoSample().exercise(client, new ResourceAddress("db", "orders"), "own-run"));
             assertTrue(error.getMessage().contains(missing ? "Document not found after create" : "read vs original"));
-            assertEquals(List.of("create", "create", "read", "delete", "delete"), operations);
+            assertEquals(List.of("ensureDatabase", "ensureContainer", "create", "create", "read", "delete", "delete"), operations);
         }
     }
 
@@ -441,6 +459,9 @@ class ComplexPojoSampleTest {
     private static MulticloudDbClient clientWithQuery(Call query) {
         Map<MulticloudDbKey, Map<String, Object>> store = new HashMap<>();
         return fake((method, args) -> {
+            if (method.equals("ensureDatabase") || method.equals("ensureContainer")) {
+                return null;
+            }
             if (method.equals("query")) {
                 return query.invoke(method, args);
             }
