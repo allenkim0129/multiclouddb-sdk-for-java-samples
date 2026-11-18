@@ -418,8 +418,9 @@ Known root provider fields (`id`, keys, Cosmos metadata) are excluded from
 POJO comparison; unexpected application fields still fail.
 
 Point reads call `client.read()` once, without waiting or retrying. Missing or stale
-data fails the check immediately. `queryDocuments` calls `client.query()` once per
-page, following continuation tokens up to ten pages without waiting or retrying.
+data fails the check immediately. The query block is directly in `exercise`, beside
+the other SDK operations: it builds the request, calls `client.query()`, prints
+diagnostics and follows continuation tokens up to ten pages without waiting or retrying.
 Empty or stale query results fail the subsequent comparisons.
 An unexpected operation error or failed comparison throws immediately.
 There is no failure accumulation or continuation after a mismatch.

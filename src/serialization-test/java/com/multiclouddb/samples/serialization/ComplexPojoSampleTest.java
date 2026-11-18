@@ -247,10 +247,11 @@ class ComplexPojoSampleTest {
     @Test
     void queryFollowsEmptyPagesAndRemainsPartitionScoped() throws Exception {
         AtomicInteger calls = new AtomicInteger();
+        Map<String, Object> row = inputDocument("own-run", 4);
         OperationDiagnostics diagnostics = OperationDiagnostics.builder(ProviderId.COSMOS, "query", Duration.ofMillis(12))
                 .requestId("synthetic-request-1").statusCode(200).requestCharge(2.5).itemCount(0)
                 .etag("PRIVATE-ETAG").sessionToken("PRIVATE-SESSION").build();
-        var client = fake((method, args) -> {
+        var client = clientWithQuery((method, args) -> {
             assertEquals("query", method);
             QueryRequest request = (QueryRequest) args[1];
             assertEquals("own-run", request.partitionKey());
@@ -261,13 +262,13 @@ class ComplexPojoSampleTest {
                 return new QueryPage(List.of(), "PRIVATE-CONTINUATION", diagnostics);
             }
             assertEquals("PRIVATE-CONTINUATION", request.continuationToken());
-            return new QueryPage(List.of(Map.of("id", "case", "revision", 4, "runId", "own-run")), null);
+            return new QueryPage(List.of(row), null);
         });
         ByteArrayOutputStream output = new ByteArrayOutputStream();
         PrintStream originalOut = System.out;
         try (PrintStream captured = new PrintStream(output, true, StandardCharsets.UTF_8)) {
             System.setOut(captured);
-            assertEquals(1, queryDocuments(client, new ResourceAddress("db", "orders"), "own-run").size());
+            new ComplexPojoSample().exercise(client, new ResourceAddress("db", "orders"), "own-run");
         } finally {
             System.setOut(originalOut);
         }
@@ -288,27 +289,30 @@ class ComplexPojoSampleTest {
     @Test
     void queryStopsAtPageBudget() {
         AtomicInteger calls = new AtomicInteger();
-        var client = fake((method, args) -> {
+        var client = clientWithQuery((method, args) -> {
             calls.incrementAndGet();
             return new QueryPage(List.of(), "endless");
         });
-        assertThrows(AssertionError.class, () -> ComplexPojoSample.queryDocuments(client,
-                new ResourceAddress("db", "orders"), "own-run"));
+        AssertionError error = assertThrows(AssertionError.class, () ->
+                new ComplexPojoSample().exercise(client, new ResourceAddress("db", "orders"), "own-run"));
+        assertEquals("Query page budget exceeded", error.getMessage());
         assertEquals(10, calls.get());
     }
 
     @Test
-    void queryReturnsEmptyOrStaleResultsWithoutRetrying() {
-        List<Map<String, Object>> stale = List.of(Map.of("runId", "own-run", "revision", 1));
+    void queryRejectsEmptyOrStaleResultsWithoutRetrying() throws Exception {
+        List<Map<String, Object>> stale = List.of(inputDocument("own-run", 1));
         for (List<Map<String, Object>> rows : List.of(List.<Map<String, Object>>of(), stale)) {
             AtomicInteger calls = new AtomicInteger();
-            var client = fake((method, args) -> {
+            var client = clientWithQuery((method, args) -> {
                 assertEquals("query", method);
                 calls.incrementAndGet();
                 return new QueryPage(rows, null);
             });
 
-            assertEquals(rows, queryDocuments(client, new ResourceAddress("db", "orders"), "own-run"));
+            AssertionError error = assertThrows(AssertionError.class, () ->
+                    new ComplexPojoSample().exercise(client, new ResourceAddress("db", "orders"), "own-run"));
+            assertTrue(error.getMessage().contains(rows.isEmpty() ? "query NEW order count" : "query vs upsert input"));
             assertEquals(1, calls.get());
         }
     }
@@ -426,6 +430,29 @@ class ComplexPojoSampleTest {
     @FunctionalInterface
     private interface Call {
         Object invoke(String method, Object[] args);
+    }
+
+    // Let query scenarios exercise the real workflow without repeating its CRUD test setup.
+    private static MulticloudDbClient clientWithQuery(Call query) {
+        Map<MulticloudDbKey, Map<String, Object>> store = new HashMap<>();
+        return fake((method, args) -> {
+            if (method.equals("query")) {
+                return query.invoke(method, args);
+            }
+            MulticloudDbKey key = (MulticloudDbKey) args[1];
+            return switch (method) {
+                case "create", "update", "upsert" -> {
+                    store.put(key, MAPPER.convertValue(args[2], MAP_TYPE));
+                    yield null;
+                }
+                case "read" -> store.containsKey(key) ? new DocumentResult(store.get(key)) : null;
+                case "delete" -> {
+                    store.remove(key);
+                    yield null;
+                }
+                default -> throw new AssertionError("Unexpected call " + method);
+            };
+        });
     }
 
     // Tests only customer orchestration; this is NOT provider or live E2E evidence.

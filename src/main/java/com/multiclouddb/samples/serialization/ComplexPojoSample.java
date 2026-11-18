@@ -165,7 +165,22 @@ public final class ComplexPojoSample {
                 client.upsert(address, key, fullDocument);
 
                 // Query NEW orders only: return the first order, not the PAID order.
-                List<Map<String, Object>> rows = queryDocuments(client, address, runId);
+                List<Map<String, Object>> rows = new ArrayList<>();
+                String token = null;
+                int pages = 0;
+
+                // Fetch each page once. Continuation tokens mean more pages, not retries.
+                do {
+                    QueryRequest request = QueryRequest.builder().partitionKey(runId)
+                            .expression("status = @status").parameters(Map.of("status", "NEW"))
+                            .maxPageSize(2).continuationToken(token).build();
+                    var page = client.query(address, request);
+                    System.out.println("QUERY page=" + (pages + 1) + " " + queryDiagnosticsSummary(page.diagnostics()));
+                    rows.addAll(page.items());
+                    token = page.continuationToken();
+                    check(++pages < 10 || token == null, "Query page budget exceeded");
+                } while (token != null);
+
                 checkEquals("query NEW order count (excluding PAID)", 1, rows.size());
                 Map<String, Object> row = rows.get(0);
                 checkEquals("query vs upsert input", fullDocument, payload(row));
@@ -240,27 +255,6 @@ public final class ComplexPojoSample {
         if (!condition) {
             throw new AssertionError(message); // Always active; no JVM -ea flag needed.
         }
-    }
-
-    static List<Map<String, Object>> queryDocuments(MulticloudDbClient client, ResourceAddress address,
-                                                    String runId) {
-        List<Map<String, Object>> rows = new ArrayList<>();
-        String token = null;
-        int pages = 0;
-
-        // Fetch each page once. Continuation tokens mean more pages, not retries.
-        do {
-            QueryRequest request = QueryRequest.builder().partitionKey(runId)
-                    .expression("status = @status").parameters(Map.of("status", "NEW"))
-                    .maxPageSize(2).continuationToken(token).build();
-            var page = client.query(address, request);
-            System.out.println("QUERY page=" + (pages + 1) + " " + queryDiagnosticsSummary(page.diagnostics()));
-            rows.addAll(page.items());
-            token = page.continuationToken();
-            check(++pages < 10 || token == null, "Query page budget exceeded");
-        } while (token != null);
-
-        return rows;
     }
 
     static String queryDiagnosticsSummary(OperationDiagnostics diagnostics) {
