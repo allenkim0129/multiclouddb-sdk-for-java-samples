@@ -99,8 +99,11 @@ class ComplexPojoConfigTest {
         String executable = System.getProperty("os.name").startsWith("Windows") ? "java.exe" : "java";
         List<String> command = new ArrayList<>();
         command.add(Path.of(System.getProperty("java.home"), "bin", executable).toString());
-        // Match Files.readString below, including on Windows JDK 17 with a non-UTF-8 default.
+        // JDK 17 may encode stdout/stderr separately from file.encoding on Windows.
+        // Match the UTF-8 decoder below for both redirected streams.
         command.add("-Dfile.encoding=UTF-8");
+        command.add("-Dsun.stdout.encoding=UTF-8");
+        command.add("-Dsun.stderr.encoding=UTF-8");
         overrides.forEach((key, value) -> command.add("-D" + key + "=" + value));
         command.add("-cp");
         command.add(System.getProperty("surefire.test.class.path", System.getProperty("java.class.path"))
