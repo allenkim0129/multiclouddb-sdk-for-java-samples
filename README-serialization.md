@@ -25,7 +25,8 @@ Short walkthrough: configure your live test target, follow one original order in
 original input. Follow `exercise` from top to bottom:
 `create`, `read`/restore, POJO-based `update`, direct Map `update`, full `upsert`,
 partition-scoped `query`/restore, and owned-key cleanup.
-There are no deliberate error probes, metadata demonstrations or separate helper classes.
+There are no deliberate error probes or separate helper classes. Each query page
+prints its public SDK diagnostics without native details or token contents.
 `run` names the command argument `provider`; input creation, required-property checks
 and comparisons are methods in the same file.
 Jackson's tree comparison handles nested structure; a small numeric comparator
@@ -148,7 +149,7 @@ java -cp $cp $main cosmos
 $LASTEXITCODE
 ```
 
-The app prints only test `PASS` statements and errors. It does not dump POJOs,
+The app prints test `PASS` statements, per-page query diagnostics and errors. It does not dump POJOs,
 Maps, runtime types or startup details. Inputs remain visible and editable in
 `Order.java` and the `ORDER_JSON` text block in `ComplexPojoSample.java`.
 There is no preview mode. Missing arguments fail with usage instead of connecting.
@@ -424,6 +425,17 @@ An unexpected operation error or failed comparison throws immediately.
 There is no failure accumulation or continuation after a mismatch.
 Cleanup is still attempted for a confirmed create.
 
+Each query page prints `QueryPage.diagnostics()`: provider, operation, duration,
+request ID, status code, request charge and item count. Missing diagnostics prints
+`diagnostics=<unavailable>`; optional fields are not fabricated. Request charge is
+provider-specific (Cosmos RU / Dynamo capacity), and `0.0` can mean unavailable
+or not opted-in rather than zero cost. Duration is the SDK-reported duration,
+not a separate benchmark.
+
+ETags and session tokens are shown only as `etagPresent`/`sessionTokenPresent`.
+Continuation tokens and native diagnostics are not printed. Request IDs and
+operation names are length-limited and restricted to identifier characters.
+
 Exit **0** means all executed checks passed. Exit **1** means at least one operation,
 comparison, or cleanup failed. An exception or assertion failure stops the workflow's later
 steps, so do not infer those steps ran from the overall command completing.
@@ -458,8 +470,8 @@ failures are reported by count; inspect only the printed document keys.
 Sample assertion messages include the expected/actual synthetic values or the
 missing property's name, never a configured credential. There is no failure counter,
 catch-and-continue loop, or sample-level retry of writes, point reads or queries.
-Query pagination only fetches the next page; it does not poll for data. Error-contract and metadata
-demonstrations are intentionally outside this POJO walkthrough.
+Query pagination only fetches the next page; it does not poll for data.
+Error-contract and point-read metadata demonstrations are outside this POJO walkthrough.
 
 ## Existing apps: migration smoke and review status
 
@@ -565,7 +577,7 @@ live account and is intentionally not part of this offline/local verification.
 | --- | --- | --- |
 | Mapping/date/null policy is customer boilerplate | Explicit Jackson settings and direct calls, one visible fixture and exact comparisons | Documentation/usability review; no automatic serializer redesign |
 | Cosmos/Dynamo `update` replaces; existing TODO edits and Risk alert acknowledgement merge client-side then upsert | Keep current business behavior and verify preserved fields | Concurrent lost-update risk remains. Any partial-update work would improve the existing update API; a separate API is not agreed |
-| Missing read is null; writes can throw | Read once and fail if absent or mismatched; propagate errors and display only category/status at the console boundary | Detailed error-contract and diagnostics evaluation is outside this simplified walkthrough; no new API or overhead claim |
+| Missing read is null; writes can throw | Read once and fail if absent or mismatched; propagate errors and display only category/status at the console boundary | Detailed error-contract evaluation is outside this simplified walkthrough; query diagnostics show only available public fields, with no new API or overhead claim |
 | Existing app HTTP error policies are simplistic | Smoke records TODO's category-bearing 500 and Risk's generic 500; no redesign of all handlers | Existing handlers may echo exception messages, and do not surface diagnostics. Harden before customer deployment; do not treat legacy app logs/HTTP as sanitized |
 | Existing list methods consume one QueryPage; watcher/consumer failure policies are not a full resilient feed processor | Small fake scenarios only; actual feed/thread behavior remains unverified | Review pagination, resumability, terminal cursors and error policy with realistic data |
 | Native configuration and resources matter after compile succeeds | Remove rejected transport config; include static assets without credentials | Run actual local/native smoke and Windows checks before declaring apps migration-complete |

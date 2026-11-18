@@ -171,7 +171,9 @@ class ComplexPojoSampleTest {
 
         List<String> lines = output.toString(StandardCharsets.UTF_8).lines().toList();
         assertFalse(lines.isEmpty());
-        assertTrue(lines.stream().allMatch(line -> line.startsWith("PASS ")), lines.toString());
+        assertTrue(lines.stream().allMatch(line -> line.startsWith("PASS ") || line.startsWith("QUERY page=")),
+                lines.toString());
+        assertTrue(lines.contains("QUERY page=1 diagnostics=<unavailable>"), lines.toString());
         assertEquals(List.of("create", "create", "read",
                 "update", "read", "update", "read", "upsert", "query", "delete", "delete"), operations);
         assertEquals(Map.of(unrelated, Map.of("business", "untouched")), store);
@@ -245,6 +247,9 @@ class ComplexPojoSampleTest {
     @Test
     void queryFollowsEmptyPagesAndRemainsPartitionScoped() throws Exception {
         AtomicInteger calls = new AtomicInteger();
+        OperationDiagnostics diagnostics = OperationDiagnostics.builder(ProviderId.COSMOS, "query", Duration.ofMillis(12))
+                .requestId("synthetic-request-1").statusCode(200).requestCharge(2.5).itemCount(0)
+                .etag("PRIVATE-ETAG").sessionToken("PRIVATE-SESSION").build();
         var client = fake((method, args) -> {
             assertEquals("query", method);
             QueryRequest request = (QueryRequest) args[1];
@@ -253,14 +258,31 @@ class ComplexPojoSampleTest {
             assertEquals(Map.of("status", "NEW"), request.parameters());
             if (calls.getAndIncrement() == 0) {
                 assertNull(request.continuationToken());
-                return new QueryPage(List.of(), "next");
+                return new QueryPage(List.of(), "PRIVATE-CONTINUATION", diagnostics);
             }
-            assertEquals("next", request.continuationToken());
+            assertEquals("PRIVATE-CONTINUATION", request.continuationToken());
             return new QueryPage(List.of(Map.of("id", "case", "revision", 4, "runId", "own-run")), null);
         });
-        assertEquals(1, ComplexPojoSample.queryDocuments(client,
-                new ResourceAddress("db", "orders"), "own-run").size());
+        ByteArrayOutputStream output = new ByteArrayOutputStream();
+        PrintStream originalOut = System.out;
+        try (PrintStream captured = new PrintStream(output, true, StandardCharsets.UTF_8)) {
+            System.setOut(captured);
+            assertEquals(1, queryDocuments(client, new ResourceAddress("db", "orders"), "own-run").size());
+        } finally {
+            System.setOut(originalOut);
+        }
         assertEquals(2, calls.get());
+        String text = output.toString(StandardCharsets.UTF_8);
+        assertTrue(text.contains("QUERY page=1 diagnostics{provider=cosmos, operation=query, duration=PT0.012S"));
+        assertTrue(text.contains("requestId=synthetic-request-1, statusCode=200, requestCharge=2.5, itemCount=0"));
+        assertTrue(text.contains("etagPresent=true, sessionTokenPresent=true"));
+        assertTrue(text.contains("QUERY page=2 diagnostics=<unavailable>"));
+        assertFalse(text.contains("PRIVATE"));
+
+        String optional = queryDiagnosticsSummary(OperationDiagnostics.builder(ProviderId.DYNAMO, "query", Duration.ZERO)
+                .requestId("bad\nidentifier").build());
+        assertTrue(optional.contains("requestId=<redacted>, statusCode=null, requestCharge=0.0"));
+        assertTrue(optional.contains("etagPresent=false, sessionTokenPresent=false"));
     }
 
     @Test

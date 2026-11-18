@@ -14,6 +14,7 @@ import com.multiclouddb.api.MulticloudDbClient;
 import com.multiclouddb.api.MulticloudDbClientFactory;
 import com.multiclouddb.api.MulticloudDbException;
 import com.multiclouddb.api.MulticloudDbKey;
+import com.multiclouddb.api.OperationDiagnostics;
 import com.multiclouddb.api.QueryRequest;
 import com.multiclouddb.api.ResourceAddress;
 import com.multiclouddb.samples.ConfigLoader;
@@ -253,12 +254,38 @@ public final class ComplexPojoSample {
                     .expression("status = @status").parameters(Map.of("status", "NEW"))
                     .maxPageSize(2).continuationToken(token).build();
             var page = client.query(address, request);
+            System.out.println("QUERY page=" + (pages + 1) + " " + queryDiagnosticsSummary(page.diagnostics()));
             rows.addAll(page.items());
             token = page.continuationToken();
             check(++pages < 10 || token == null, "Query page budget exceeded");
         } while (token != null);
 
         return rows;
+    }
+
+    static String queryDiagnosticsSummary(OperationDiagnostics diagnostics) {
+        if (diagnostics == null) {
+            return "diagnostics=<unavailable>";
+        }
+
+        // Show the public fields, not native diagnostics or token contents.
+        // requestCharge is Cosmos RU / Dynamo capacity; 0 may mean unavailable, not free.
+        return "diagnostics{provider=" + (diagnostics.provider() == null ? null : diagnostics.provider().id())
+                + ", operation=" + safeIdentifier(diagnostics.operation())
+                + ", duration=" + diagnostics.duration()
+                + ", requestId=" + safeIdentifier(diagnostics.requestId())
+                + ", statusCode=" + diagnostics.statusCode()
+                + ", requestCharge=" + diagnostics.requestCharge()
+                + ", itemCount=" + diagnostics.itemCount()
+                + ", etagPresent=" + (diagnostics.etag() != null)
+                + ", sessionTokenPresent=" + (diagnostics.sessionToken() != null) + "}";
+    }
+
+    private static String safeIdentifier(String value) {
+        if (value == null) {
+            return "<unavailable>";
+        }
+        return value.matches("[A-Za-z0-9._:-]{1,256}") ? value : "<redacted>";
     }
 
     static String safeFailureMessage(Throwable failure) {
