@@ -175,7 +175,8 @@ public final class ComplexPojoSample {
                             .expression("status = @status").parameters(Map.of("status", "NEW"))
                             .maxPageSize(2).continuationToken(token).build();
                     var page = client.query(address, request);
-                    System.out.println("QUERY page=" + (pages + 1) + " " + queryDiagnosticsSummary(page.diagnostics()));
+                    OperationDiagnostics diagnostics = page.diagnostics();
+                    System.out.println("QUERY page=" + (pages + 1) + " " + queryDiagnosticsSummary(diagnostics));
                     rows.addAll(page.items());
                     token = page.continuationToken();
                     check(++pages < 10 || token == null, "Query page budget exceeded");
