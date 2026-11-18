@@ -32,20 +32,6 @@ function Assert-Settings {
             throw "Missing or invalid config field: $name"
         }
     }
-    $uri = $null
-    if (-not [Uri]::TryCreate($Settings.endpoint, [UriKind]::Absolute, [ref]$uri) -or
-        $uri.Scheme -ne 'https' -or -not $uri.Host -or $uri.UserInfo -or
-        $uri.Query -or $uri.Fragment -or $uri.AbsolutePath -ne '/') {
-        throw 'Endpoint must be an HTTPS account URL without credentials, query, fragment or extra path.'
-    }
-    foreach ($name in @('database', 'collection')) {
-        if ($Settings.$name -cnotmatch '^[A-Za-z0-9_-]{1,63}$') {
-            throw "$name must contain 1-63 letters, digits, underscores or hyphens."
-        }
-    }
-    if ($Settings.runPrefix -cnotmatch '^[A-Za-z0-9-]{1,32}$') {
-        throw 'Run prefix must contain 1-32 letters, digits or hyphens.'
-    }
 }
 
 if ($Load) {

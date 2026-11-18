@@ -23,13 +23,15 @@ try {
     $setup = Join-Path $scratch 'scripts/configure-cosmos-sample.ps1'
     $config = Join-Path $scratch 'src/main/resources/serialization-cosmos-cloud.properties'
     $previousKey = $env:MCDB_COSMOS_KEY
-    foreach ($value in @('https://synthetic.documents.azure.com/', 'synthetic-db', 'synthetic-container')) {
+    $database = 'synthetic.db.' + ('a' * 64)
+    foreach ($value in @('https://synthetic.documents.azure.com/', $database, 'synthetic.container')) {
         $answers.Enqueue($value)
     }
     & $setup
     $saved = Get-Content $config -Raw
     if (-not $saved.Contains('multiclouddb.connection.key=synthetic+/key\=\=') -or
-        -not $saved.Contains('multiclouddb.database=synthetic-db') -or
+        -not $saved.Contains("multiclouddb.database=$database") -or
+        -not $saved.Contains('multiclouddb.collection=synthetic.container') -or
         $env:MCDB_COSMOS_KEY -cne $previousKey) { throw 'Properties generation or environment isolation failed' }
     & $setup -Load
     if ($testState.Prompts -ne 1 -or (Get-Content $config -Raw) -ne $saved) {
@@ -48,8 +50,8 @@ try {
     New-Item -ItemType Directory (Join-Path $scratch '.local') | Out-Null
     $legacy = Join-Path $scratch '.local/cosmos-sample.json'
     $oldSettings = [ordered]@{
-        endpoint = 'https://synthetic.documents.azure.com/'
-        database = 'legacy-db'; collection = 'legacy-container'; runPrefix = 'legacy-run'
+        endpoint = 'not-a-url'
+        database = 'legacy.db'; collection = 'legacy.container'; runPrefix = 'legacy_prefix_' + ('b' * 32)
     }
     $oldSettings | ConvertTo-Json | Set-Content $legacy -Encoding UTF8
     $testState.Key = ''

@@ -21,7 +21,6 @@ import com.multiclouddb.api.ResourceAddress;
 import com.multiclouddb.samples.ConfigLoader;
 
 import java.io.IOException;
-import java.net.URI;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -92,10 +91,14 @@ public final class ComplexPojoSample {
             return 1;
         }
         // The shared loader can return settings even when a resource is missing.
-        // Require an explicit provider, target and run prefix rather than silently selecting
-        // an emulator/demo destination. Errors name properties, not their potentially secret values.
-        for (String name : List.of("multiclouddb.provider", "multiclouddb.database",
-                "multiclouddb.collection", "multiclouddb.runPrefix")) {
+        // Check only that required values were supplied; leave naming/format rules to the SDK
+        // and provider. Errors name properties, not their potentially secret values.
+        List<String> requiredProperties = new ArrayList<>(List.of("multiclouddb.provider",
+                "multiclouddb.database", "multiclouddb.collection", "multiclouddb.runPrefix"));
+        requiredProperties.addAll(args[0].equals("cosmos")
+                ? List.of("multiclouddb.connection.endpoint", "multiclouddb.connection.key")
+                : List.of("multiclouddb.connection.region"));
+        for (String name : requiredProperties) {
             if (appConfig.property(name) == null || appConfig.property(name).isBlank()) {
                 System.err.println("FAIL configuration: Missing required property: " + name
                         + ". Include the config directory on the runtime classpath.");
@@ -105,44 +108,12 @@ public final class ComplexPojoSample {
         // An explicitly selected resource may belong to another provider. Reject that mismatch
         // rather than connecting somewhere different from what the command requested.
         if (!appConfig.sdk().provider().id().equals(args[0])) {
-            System.err.println("FAIL configuration: Config provider must match the live command");
+            System.err.println("FAIL configuration: Config provider must match the cosmos/dynamo argument");
             return 1;
         }
         String database = appConfig.property("multiclouddb.database");
         String collection = appConfig.property("multiclouddb.collection");
         String prefix = appConfig.property("multiclouddb.runPrefix");
-        // Keep identifiers predictable for this portable example and its printed cleanup keys.
-        // These are sample restrictions, not a complete statement of each provider's naming rules.
-        if (!database.matches("[A-Za-z0-9_-]{1,63}") || !collection.matches("[A-Za-z0-9_-]{1,63}")
-                || !prefix.matches("[A-Za-z0-9-]{1,32}")) {
-            System.err.println("FAIL configuration: Database/collection must be 1-63 letters, digits,"
-                    + " underscores or hyphens; runPrefix must be 1-32 letters, digits or hyphens");
-            return 1;
-        }
-        // Cosmos uses the primary key saved in the local properties file. Check its presence
-        // and the endpoint shape here; actual credentials/permissions are checked by the service.
-        // Dynamo needs a configured region and uses the SDK's credential configuration/chain.
-        if (args[0].equals("cosmos")) {
-            String key = appConfig.property("multiclouddb.connection.key");
-            if (key == null || key.isBlank()) {
-                System.err.println("FAIL configuration: Missing required property: multiclouddb.connection.key");
-                return 1;
-            }
-            try {
-                URI endpoint = URI.create(appConfig.property("multiclouddb.connection.endpoint", ""));
-                if (!"https".equals(endpoint.getScheme()) || endpoint.getHost() == null
-                        || endpoint.getUserInfo() != null || endpoint.getQuery() != null || endpoint.getFragment() != null
-                        || !(endpoint.getPath().isEmpty() || endpoint.getPath().equals("/"))) {
-                    throw new IllegalArgumentException();
-                }
-            } catch (IllegalArgumentException invalid) {
-                System.err.println("FAIL configuration: multiclouddb.connection.endpoint must be an HTTPS account URL");
-                return 1;
-            }
-        } else if (!appConfig.property("multiclouddb.connection.region", "").matches("[a-z0-9-]+")) {
-            System.err.println("FAIL configuration: multiclouddb.connection.region must be an AWS region identifier");
-            return 1;
-        }
         // ResourceAddress names an existing logical database/collection; this sample never
         // provisions a database, container or table. The SHA is the expected build pin:
         // the build script verifies artifacts, while these messages show runtime provenance.

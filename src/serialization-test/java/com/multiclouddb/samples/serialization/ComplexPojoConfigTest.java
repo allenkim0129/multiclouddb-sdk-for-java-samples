@@ -47,13 +47,12 @@ class ComplexPojoConfigTest {
     }
 
     @Test
-    void classpathPropertiesAreLoadedAndInvalidValuesFailWithoutLeakingSecrets() throws Exception {
+    void classpathPropertiesRequireValuesAndMatchingProviderWithoutLeakingSecrets() throws Exception {
         Map<String, String> cases = Map.of(
                 CONFIG.replace("synthetic-private-key", ""), "Missing required property: multiclouddb.connection.key",
-                CONFIG.replace("https://synthetic.invalid/", "https://user:synthetic-private-key@synthetic.invalid/"),
-                "multiclouddb.connection.endpoint must be an HTTPS account URL",
+                CONFIG.replace("https://synthetic.invalid/", ""),
+                "Missing required property: multiclouddb.connection.endpoint",
                 CONFIG.replace("multiclouddb.database=synthetic-db", ""), "Missing required property: multiclouddb.database",
-                CONFIG.replace("synthetic-db", "*"), "Database/collection must be",
                 CONFIG.replace("provider=cosmos", "provider=dynamo"), "Config provider must match");
         for (var entry : cases.entrySet()) {
             Files.writeString(directory.resolve("serialization-cosmos-cloud.properties"), entry.getKey());
@@ -66,12 +65,25 @@ class ComplexPojoConfigTest {
     @Test
     void sharedLoaderAcceptsResourceSelectionAndSystemPropertyOverrides() throws Exception {
         Files.writeString(directory.resolve("chosen.properties"),
-                CONFIG.replace("synthetic-db", "*").replace("synthetic-private-key", ""));
+                CONFIG.replace("synthetic-db", "").replace("synthetic-private-key", ""));
         String output = rejected(List.of("cosmos"), Map.of(
                 "multiclouddb.config", "chosen.properties", "multiclouddb.database", "overridden-db"));
         assertTrue(output.contains("Loaded config: chosen.properties"), output);
         assertTrue(output.contains("Missing required property: multiclouddb.connection.key"), output);
-        assertFalse(output.contains("Database/collection must be"), output);
+        assertFalse(output.contains("Missing required property: multiclouddb.database"), output);
+    }
+
+    @Test
+    void sampleDoesNotRestrictNamesPrefixOrEndpointFormat() throws Exception {
+        // A missing key prevents any connection; the other values must pass the sample's checks.
+        Files.writeString(directory.resolve("serialization-cosmos-cloud.properties"), CONFIG
+                .replace("synthetic-db", "database.with.dots." + "a".repeat(64))
+                .replace("synthetic-container", "orders.with.dots")
+                .replace("pojo-test", "review_prefix_" + "b".repeat(32))
+                .replace("https://synthetic.invalid/", "not-a-url")
+                .replace("synthetic-private-key", ""));
+        String output = rejected(List.of("cosmos"), Map.of());
+        assertTrue(output.contains("Missing required property: multiclouddb.connection.key"), output);
     }
 
     @Test
@@ -81,7 +93,7 @@ class ComplexPojoConfigTest {
                         + "multiclouddb.connection.region=\n");
         String output = rejected(List.of("dynamo"), Map.of());
         assertTrue(output.contains("Loaded config: serialization-dynamo-cloud.properties"), output);
-        assertTrue(output.contains("multiclouddb.connection.region must be an AWS region identifier"), output);
+        assertTrue(output.contains("Missing required property: multiclouddb.connection.region"), output);
     }
 
     // Every invocation deliberately fails validation before creating any SDK client.

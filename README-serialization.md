@@ -192,9 +192,10 @@ or a JAR. Provider diagnostic logging is disabled in this profile. Errors print
 operation, exception type and SDK error category, not native messages/causes that
 could expose credentials. Diagnose access errors privately in your cloud tooling.
 
-Required target names are restricted to 1-63 letters/digits/underscores/hyphens;
-`multiclouddb.runPrefix` allows 1-32 letters/digits/hyphens. A fresh UUID is appended on every
-run; all queries are partition-scoped to that unique run.
+The sample checks for missing required properties and a provider/argument mismatch.
+It does not impose its own name lengths, character restrictions, endpoint syntax or
+region format rules; the SDK/provider validates those. A fresh UUID is appended to
+`multiclouddb.runPrefix` on every run; queries are partition-scoped to that unique run.
 
 ## Cosmos live (PowerShell)
 
@@ -539,7 +540,7 @@ in orchestration unit tests use an explicitly labeled in-memory test double:
 **they do not validate native mapping or live storage**. A separate offline cursor
 round-trip checks the directly required migration of existing change-feed samples.
 
-Observed offline results: twenty-one JUnit tests
+Observed offline results: twenty-two JUnit tests
 passed on JDK 17; the original released-SDK profile also compiled. The PowerShell
 script was executed end to end using PowerShell on Linux, including the installed/
 resolved artifact hash checks. Native Windows execution has not been performed.
