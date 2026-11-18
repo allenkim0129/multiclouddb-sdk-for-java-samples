@@ -43,7 +43,9 @@ remain separate decisions.
 | `java/com/multiclouddb/samples/serialization/Order.java` | Mutable POJOs with getters/setters: order, customer/address, line items and enum |
 | `java/com/multiclouddb/samples/serialization/ComplexPojoSample.java` | Edit the `ORDER_JSON` text block at the top; direct Jackson mapping and public SDK create/read/update/upsert/query/delete workflow |
 
-The sample uses **one complex order fixture with Jackson (one run)**.
+The sample uses **two complex orders derived from one JSON input with Jackson (one run)**.
+Both are created before the first read, in the same run partition: `jackson-baseline`
+starts as `NEW`, while `jackson-paid` has a distinct order ID and status `PAID`.
 The purpose is complex POJO mapping and public SDK CRUD/query. The order contains a nested
 customer/address, `List<LineItem>`, string and nullable Maps, enum, nanosecond
 `Instant`, `LocalDate`, null `note`/`giftMessage`, deliberately **absent** `coupon`,
@@ -387,7 +389,7 @@ environment.
 ## Read results and clean up
 
 The sample calls the public SDK:
-**create -> read -> POJO update -> read -> Map update -> read -> upsert -> query -> delete**.
+**create two orders -> read one by key -> POJO update -> read -> Map update -> read -> upsert -> query one by status -> delete both**.
 It compares reads, queries and restored POJOs to the corresponding original inputs.
 Successful checks print `PASS`; document values are included only in mismatch errors.
 
@@ -402,6 +404,11 @@ The second update edits the returned Map directly, without restoring a POJO:
 provider metadata, then `put` changes `note` and revision to `3` before `update()`.
 Both approaches send the complete document and preserve unedited fields.
 The following upsert writes a fresh order from the JSON input (`NEW`, revision `4`).
+Point reads use the `jackson-baseline` key and return only that order even though
+both documents exist. The query stays in the same partition and sends
+`status = @status` with `status = NEW` to the SDK. It must return exactly the
+first order and exclude the second, `PAID` order; no client-side status filter
+is used.
 Known root provider fields (`id`, keys, Cosmos metadata) are excluded from
 POJO comparison; unexpected application fields still fail.
 
@@ -417,9 +424,11 @@ Exit **0** means all executed checks passed. Exit **1** means at least one opera
 comparison, or cleanup failed. An exception or assertion failure stops the workflow's later
 steps, so do not infer those steps ran from the overall command completing.
 
-After **confirmed successful create**, a `finally` block deletes
-only its exact partitionKey + sortKey/id, on success or failure.
-`PASS delete` means the SDK delete call completed; the sample does not add a separate
+Each **confirmed successful create** enters its own `try/finally` cleanup scope,
+deleting only that exact partitionKey + sortKey/id on success or failure.
+If the second create fails, only the first document is deleted. If a later operation
+fails, deletion is attempted for both, even if the second document's deletion throws.
+`PASS delete` means both SDK delete calls completed; the sample does not add a separate
 post-delete polling loop.
 If both the workflow and deletion fail, the deletion exception replaces the original
 exception under normal Java `finally` semantics. The client is still closed by
@@ -427,9 +436,9 @@ exception under normal Java `finally` semantics. The client is still closed by
 A conflict or otherwise
 unconfirmed create is never blindly deleted. Ambiguous writes, failed cleanup,
 Ctrl+C, process termination, or machine loss can leave data. On a caught workflow
-failure, the error output includes the run's partition key and document key
-`jackson-baseline`. In the portal/your own tooling inspect only that exact key and
-delete a document you confirm belongs to that run. If abrupt termination prevents
+failure, the error output includes the run's partition key and document keys
+`jackson-baseline` and `jackson-paid`. In the portal/your own tooling inspect only
+those exact keys and delete documents you confirm belong to that run. If abrupt termination prevents
 that error output, establish ownership from the document's run ID and synthetic
 contents before deleting anything. Never delete all
 documents by a shared prefix, the container, database, or table as cleanup.
@@ -440,7 +449,7 @@ The workflow throws on an SDK error, mapping error or failed comparison.
 Only `main` replaces the failure with a sanitized exception for console output.
 For SDK failures it shows the category and nullable status code, not native
 messages, causes, provider details or diagnostics. Additional cleanup/client-close
-failures are reported by count; inspect only the printed document key.
+failures are reported by count; inspect only the printed document keys.
 
 Sample assertion messages include the expected/actual synthetic values or the
 missing property's name, never a configured credential. There is no failure counter,
@@ -575,7 +584,7 @@ in orchestration unit tests use an explicitly labeled in-memory test double:
 **they do not validate native mapping or live storage**. A separate offline cursor
 round-trip checks the directly required migration of existing change-feed samples.
 
-Observed offline results: twenty-six JUnit tests
+Observed offline results: twenty-seven JUnit tests
 passed on JDK 17; the original released-SDK profile also compiled. The PowerShell
 script was executed end to end using PowerShell on Linux, including the installed/
 resolved artifact hash checks. Native Windows execution has not been performed.

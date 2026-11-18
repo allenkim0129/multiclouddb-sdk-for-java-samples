@@ -95,7 +95,7 @@ class ComplexPojoSampleTest {
     }
 
     @Test
-    void customerWorkflowUpdatesPojoThenMapAndDeletesOnlyCreatedKey() throws Exception {
+    void customerWorkflowFiltersTwoOrdersAndDeletesOnlyCreatedKeys() throws Exception {
         List<String> operations = new ArrayList<>();
         Map<MulticloudDbKey, Map<String, Object>> store = new HashMap<>();
         MulticloudDbKey unrelated = MulticloudDbKey.of("unrelated", "do-not-touch");
@@ -105,10 +105,16 @@ class ComplexPojoSampleTest {
             if (method.equals("query")) {
                 QueryRequest query = (QueryRequest) args[1];
                 assertEquals("own-run", query.partitionKey());
-                assertEquals("runId = @runId", query.expression());
-                return new QueryPage(store.entrySet().stream()
+                assertEquals("status = @status", query.expression());
+                assertEquals(Map.of("status", "NEW"), query.parameters());
+                List<Map<String, Object>> partition = store.entrySet().stream()
                         .filter(entry -> entry.getKey().partitionKey().equals("own-run"))
-                        .map(Map.Entry::getValue).toList(), null);
+                        .map(Map.Entry::getValue).toList();
+                assertEquals(2, partition.size(), "Both orders must exist in the queried partition");
+                assertEquals(1, partition.stream().filter(row -> "PAID".equals(row.get("status"))).count());
+                return new QueryPage(partition.stream()
+                        .filter(row -> query.parameters().get("status").equals(row.get("status")))
+                        .toList(), null);
             }
             MulticloudDbKey key = (MulticloudDbKey) args[1];
             assertEquals("own-run", key.partitionKey());
@@ -140,6 +146,11 @@ class ComplexPojoSampleTest {
                     return null;
                 }
                 case "read" -> {
+                    assertEquals(2, store.keySet().stream()
+                            .filter(storedKey -> storedKey.partitionKey().equals("own-run")).count());
+                    assertEquals("jackson-baseline", key.sortKey(), "Point read selects only the first order");
+                    assertEquals("synthetic-order-paid",
+                            store.get(MulticloudDbKey.of("own-run", "jackson-paid")).get("orderId"));
                     return store.containsKey(key) ? new DocumentResult(store.get(key)) : null;
                 }
                 case "delete" -> {
@@ -161,9 +172,51 @@ class ComplexPojoSampleTest {
         List<String> lines = output.toString(StandardCharsets.UTF_8).lines().toList();
         assertFalse(lines.isEmpty());
         assertTrue(lines.stream().allMatch(line -> line.startsWith("PASS ")), lines.toString());
-        assertEquals(List.of("create", "read",
-                "update", "read", "update", "read", "upsert", "query", "delete"), operations);
+        assertEquals(List.of("create", "create", "read",
+                "update", "read", "update", "read", "upsert", "query", "delete", "delete"), operations);
         assertEquals(Map.of(unrelated, Map.of("business", "untouched")), store);
+    }
+
+    @Test
+    void secondCreateFailurePreservesExistingDocumentAndQueryFailureCleansUpBoth() throws Exception {
+        var firstKey = MulticloudDbKey.of("own-run", "jackson-baseline");
+        var secondKey = MulticloudDbKey.of("own-run", "jackson-paid");
+        for (boolean secondCreateSucceeds : List.of(false, true)) {
+            Map<MulticloudDbKey, Map<String, Object>> store = new HashMap<>();
+            Map<String, Object> existing = Map.of("business", "do-not-touch");
+            if (!secondCreateSucceeds) {
+                store.put(secondKey, existing);
+            }
+            List<MulticloudDbKey> deleted = new ArrayList<>();
+            IllegalStateException failure = new IllegalStateException("Simulated failure");
+            var client = fake((method, args) -> {
+                if (method.equals("query")) {
+                    throw failure;
+                }
+                MulticloudDbKey key = (MulticloudDbKey) args[1];
+                return switch (method) {
+                    case "create", "update", "upsert" -> {
+                        if (method.equals("create") && key.equals(secondKey) && !secondCreateSucceeds) {
+                            throw failure;
+                        }
+                        store.put(key, MAPPER.convertValue(args[2], MAP_TYPE));
+                        yield null;
+                    }
+                    case "read" -> new DocumentResult(store.get(key));
+                    case "delete" -> {
+                        deleted.add(key);
+                        store.remove(key);
+                        yield null;
+                    }
+                    default -> throw new AssertionError("Unexpected call " + method);
+                };
+            });
+
+            assertSame(failure, assertThrows(IllegalStateException.class, () ->
+                    new ComplexPojoSample().exercise(client, new ResourceAddress("db", "orders"), "own-run")));
+            assertEquals(secondCreateSucceeds ? List.of(secondKey, firstKey) : List.of(firstKey), deleted);
+            assertEquals(secondCreateSucceeds ? Map.of() : Map.of(secondKey, existing), store);
+        }
     }
 
     @Test
@@ -175,7 +228,7 @@ class ComplexPojoSampleTest {
                 if (method.equals("create") && !createSucceeds) {
                     throw new IllegalStateException("Simulated unconfirmed write");
                 }
-                if (method.equals("read") && operations.size() == 2) {
+                if (method.equals("read")) {
                     throw new IllegalStateException("Simulated read failure");
                 }
                 return null;
@@ -184,7 +237,8 @@ class ComplexPojoSampleTest {
                     new ComplexPojoSample().exercise(client, new ResourceAddress("db", "orders"), "own-run"));
             assertEquals(createSucceeds ? "Simulated read failure" : "Simulated unconfirmed write",
                     failure.getMessage());
-            assertEquals(createSucceeds ? List.of("create", "read", "delete") : List.of("create"), operations);
+            assertEquals(createSucceeds
+                    ? List.of("create", "create", "read", "delete", "delete") : List.of("create"), operations);
         }
     }
 
@@ -195,6 +249,8 @@ class ComplexPojoSampleTest {
             assertEquals("query", method);
             QueryRequest request = (QueryRequest) args[1];
             assertEquals("own-run", request.partitionKey());
+            assertEquals("status = @status", request.expression());
+            assertEquals(Map.of("status", "NEW"), request.parameters());
             if (calls.getAndIncrement() == 0) {
                 assertNull(request.continuationToken());
                 return new QueryPage(List.of(), "next");
@@ -267,7 +323,7 @@ class ComplexPojoSampleTest {
                 new ComplexPojoSample().exercise(client, new ResourceAddress("db", "orders"), "own-run"));
         assertTrue(error.getMessage().contains("read vs original"));
         assertTrue(error.getMessage().contains("\"note\":\"unexpected\""));
-        assertEquals(List.of("create", "read", "delete"), operations);
+        assertEquals(List.of("create", "create", "read", "delete", "delete"), operations);
     }
 
     @Test
@@ -289,7 +345,7 @@ class ComplexPojoSampleTest {
                 new ComplexPojoSample().exercise(client, new ResourceAddress("db", "orders"), "own-run"));
         assertSame(deleteFailure, thrown);
         assertEquals(0, thrown.getSuppressed().length);
-        assertEquals(List.of("create", "read", "delete"), operations);
+        assertEquals(List.of("create", "create", "read", "delete", "delete"), operations);
     }
 
     @Test
@@ -309,7 +365,7 @@ class ComplexPojoSampleTest {
             AssertionError error = assertThrows(AssertionError.class, () ->
                     new ComplexPojoSample().exercise(client, new ResourceAddress("db", "orders"), "own-run"));
             assertTrue(error.getMessage().contains(missing ? "Document not found after create" : "read vs original"));
-            assertEquals(List.of("create", "read", "delete"), operations);
+            assertEquals(List.of("create", "create", "read", "delete", "delete"), operations);
         }
     }
 

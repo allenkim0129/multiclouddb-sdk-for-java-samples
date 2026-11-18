@@ -89,9 +89,9 @@ public final class ComplexPojoSample {
         try (MulticloudDbClient client = MulticloudDbClientFactory.create(config.sdk())) {
             exercise(client, address, runId);
         } catch (Exception | AssertionError failure) {
-            // Report only the exact candidate key on failure, never account credentials.
-            System.err.println("Inspect this run's document if a write was attempted: "
-                    + runId + "/jackson-baseline");
+            // Report only the exact candidate keys on failure, never account credentials.
+            System.err.println("Inspect this run's documents if writes were attempted: "
+                    + runId + "/jackson-baseline, " + runId + "/jackson-paid");
             throw failure;
         }
 
@@ -113,53 +113,67 @@ public final class ComplexPojoSample {
         try {
             System.out.println("PASS create");
 
-            // Read the stored Map and restore the complex Order directly with Jackson.
-            DocumentResult readResult = client.read(address, key);
-            check(readResult != null, "Document not found after create");
-            Map<String, Object> returned = readResult.document();
-            Map<String, Object> payload = payload(returned);
-            checkEquals("read vs original", document, payload);
-            Order restored = MAPPER.convertValue(payload, Order.class);
-            checkEquals("restored POJO", original, restored);
+            // Same partition, different key and status: read and query must select the right order.
+            Order paidOrder = createOrder(runId, 1);
+            paidOrder.setOrderId("synthetic-order-paid");
+            paidOrder.setStatus(Order.Status.PAID);
+            MulticloudDbKey paidKey = MulticloudDbKey.of(runId, "jackson-paid");
+            client.create(address, paidKey, MAPPER.convertValue(paidOrder, MAP_TYPE));
 
-            // Modify the restored POJO directly, then map the complete object for update.
-            // update replaces the full document, so keep all the other fields.
-            restored.setStatus(Order.Status.PAID);
-            restored.setRevision(2);
-            Map<String, Object> updatedDocument = MAPPER.convertValue(restored, MAP_TYPE);
-            client.update(address, key, updatedDocument);
+            try {
+                System.out.println("PASS create second order (PAID)");
 
-            DocumentResult updateResult = client.read(address, key);
-            check(updateResult != null, "Document not found after POJO update");
-            Map<String, Object> afterUpdate = updateResult.document();
-            checkEquals("update vs modified POJO", updatedDocument, payload(afterUpdate));
-            Order restoredUpdate = MAPPER.convertValue(payload(afterUpdate), Order.class);
-            checkEquals("restored updated POJO", restored, restoredUpdate);
+                // Both documents exist. This key selects only the first order, not the PAID order.
+                DocumentResult readResult = client.read(address, key);
+                check(readResult != null, "Document not found after create");
+                Map<String, Object> returned = readResult.document();
+                Map<String, Object> payload = payload(returned);
+                checkEquals("read vs original", document, payload);
+                Order restored = MAPPER.convertValue(payload, Order.class);
+                checkEquals("restored POJO", original, restored);
 
-            // Alternatively, edit the returned Map without converting it to a POJO.
-            // payload makes a mutable copy without provider metadata; all business fields remain.
-            Map<String, Object> editedMap = payload(afterUpdate);
-            editedMap.put("note", "Updated directly in the Map");
-            editedMap.put("revision", 3);
-            client.update(address, key, editedMap);
+                // Modify the restored POJO directly, then map the complete object for update.
+                // update replaces the full document, so keep all the other fields.
+                restored.setStatus(Order.Status.PAID);
+                restored.setRevision(2);
+                Map<String, Object> updatedDocument = MAPPER.convertValue(restored, MAP_TYPE);
+                client.update(address, key, updatedDocument);
 
-            DocumentResult mapUpdateResult = client.read(address, key);
-            check(mapUpdateResult != null, "Document not found after Map update");
-            Map<String, Object> afterMapUpdate = mapUpdateResult.document();
-            checkEquals("update vs edited Map", editedMap, payload(afterMapUpdate));
+                DocumentResult updateResult = client.read(address, key);
+                check(updateResult != null, "Document not found after POJO update");
+                Map<String, Object> afterUpdate = updateResult.document();
+                checkEquals("update vs modified POJO", updatedDocument, payload(afterUpdate));
+                Order restoredUpdate = MAPPER.convertValue(payload(afterUpdate), Order.class);
+                checkEquals("restored updated POJO", restored, restoredUpdate);
 
-            // Demonstrate upsert with a fresh order from the JSON input (status NEW, revision 4).
-            Order fullOrder = createOrder(runId, 4);
-            Map<String, Object> fullDocument = MAPPER.convertValue(fullOrder, MAP_TYPE);
-            client.upsert(address, key, fullDocument);
+                // Alternatively, edit the returned Map without converting it to a POJO.
+                // payload makes a mutable copy without provider metadata; all business fields remain.
+                Map<String, Object> editedMap = payload(afterUpdate);
+                editedMap.put("note", "Updated directly in the Map");
+                editedMap.put("revision", 3);
+                client.update(address, key, editedMap);
 
-            // Read back the upsert through query, then restore its single order.
-            List<Map<String, Object>> rows = queryDocuments(client, address, runId);
-            checkEquals("query row count", 1, rows.size());
-            Map<String, Object> row = rows.get(0);
-            checkEquals("query vs upsert input", fullDocument, payload(row));
-            Order queried = MAPPER.convertValue(payload(row), Order.class);
-            checkEquals("restored query POJO", fullOrder, queried);
+                DocumentResult mapUpdateResult = client.read(address, key);
+                check(mapUpdateResult != null, "Document not found after Map update");
+                Map<String, Object> afterMapUpdate = mapUpdateResult.document();
+                checkEquals("update vs edited Map", editedMap, payload(afterMapUpdate));
+
+                // Demonstrate upsert with a fresh order from the JSON input (status NEW, revision 4).
+                Order fullOrder = createOrder(runId, 4);
+                Map<String, Object> fullDocument = MAPPER.convertValue(fullOrder, MAP_TYPE);
+                client.upsert(address, key, fullDocument);
+
+                // Query NEW orders only: return the first order, not the PAID order.
+                List<Map<String, Object>> rows = queryDocuments(client, address, runId);
+                checkEquals("query NEW order count (excluding PAID)", 1, rows.size());
+                Map<String, Object> row = rows.get(0);
+                checkEquals("query vs upsert input", fullDocument, payload(row));
+                Order queried = MAPPER.convertValue(payload(row), Order.class);
+                checkEquals("restored query POJO", fullOrder, queried);
+            } finally {
+                // This scope is entered only after the second create succeeds.
+                client.delete(address, paidKey);
+            }
         } finally {
             // Delete our document even if a read, write or comparison fails.
             client.delete(address, key);
@@ -236,7 +250,7 @@ public final class ComplexPojoSample {
         // Fetch each page once. Continuation tokens mean more pages, not retries.
         do {
             QueryRequest request = QueryRequest.builder().partitionKey(runId)
-                    .expression("runId = @runId").parameters(Map.of("runId", runId))
+                    .expression("status = @status").parameters(Map.of("status", "NEW"))
                     .maxPageSize(2).continuationToken(token).build();
             var page = client.query(address, request);
             rows.addAll(page.items());
@@ -253,6 +267,6 @@ public final class ComplexPojoSample {
             detail += " category=" + sdk.error().category() + " statusCode=" + sdk.error().statusCode();
         }
         return "FAIL " + detail + "; cleanup/client-close failures=" + failure.getSuppressed().length
-                + ". Inspect the printed document key if a write was attempted. Native details suppressed.";
+                + ". Inspect the printed document keys if writes were attempted. Native details suppressed.";
     }
 }
