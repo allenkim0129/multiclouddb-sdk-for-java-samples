@@ -18,23 +18,19 @@ The `public static void main(String[] args)` method is in
 | --- | --- |
 | [Order.java](src/main/java/com/multiclouddb/samples/serialization/Order.java) | What the application owns: nested POJOs and Java field types |
 | [OrderFixtures.java](src/main/java/com/multiclouddb/samples/serialization/OrderFixtures.java) | Visible synthetic inputs; compare with the [independent JSON fixture](src/main/resources/fixtures/baseline.json) |
-| [ComplexPojoSample.java](src/main/java/com/multiclouddb/samples/serialization/ComplexPojoSample.java) | Jackson `ObjectMapper` setup, direct `convertValue` calls, public SDK calls in `exercise`, diagnostics, comparison and cleanup |
+| [ComplexPojoSample.java](src/main/java/com/multiclouddb/samples/serialization/ComplexPojoSample.java) | Jackson setup, direct mapping and SDK calls in `exercise`; small supporting methods at the bottom of the same file |
 | [ConfigLoader.java](src/main/java/com/multiclouddb/samples/ConfigLoader.java) | Existing shared properties loader used by the other samples |
 
 Short walkthrough: configure your live test target, follow one original order into
-`MAPPER.convertValue`, and compare its returned Map/types and restored POJO to the
-JSON fixture. Read `exercise`
-as customer code: explicit `create`, optional missing-read/conflict/invalid-input
-examples, `read`, replacement `update`, full `upsert`, partition-scoped `query`,
-and owned-key cleanup. `errorSummary`/`diagnosticsSummary` are in that same file,
-not hidden behind a client/error framework. `ExpectedDocuments` only supports
-comparison and display; it is not the application serializer.
-
-[`SampleChecks.java`](src/main/java/com/multiclouddb/samples/serialization/SampleChecks.java)
-contains the small fail-fast helpers: `checkArguments`, `checkRequiredProperties`,
-`checkEquals` and `check`. The main workflow calls these by name instead of embedding
-validation loops or maintaining a failure counter. Logical blocks are separated by
-blank lines so setup, mapping, each SDK operation and restoration can be read independently.
+`MAPPER.convertValue`, and compare its returned Map and restored POJO to the
+JSON fixture. Follow `exercise` from top to bottom:
+`create`, `read`/restore, replacement `update`, full `upsert`,
+partition-scoped `query`/restore, and owned-key cleanup.
+There are no deliberate error probes, metadata demonstrations or separate helper classes.
+`run` names the command argument `provider`; required-property checks, expected JSON
+loading and comparisons are methods in the same file.
+Jackson's tree comparison handles nested structure; a small numeric comparator
+accepts equal values across Java number types without rounding or tolerance.
 
 The intent is a small review surface for the team's typical application workflow,
 not a claim that review is complete, the API is approved for customer delivery,
@@ -146,8 +142,9 @@ java -cp $cp $main cosmos
 $LASTEXITCODE
 ```
 
-The app prints the original POJO, expected JSON, outgoing and returned Maps,
-leaf runtime types, restored POJO, exact differences, and PASS/FAIL.
+The app prints only test `PASS` statements and errors. It does not dump POJOs,
+Maps, runtime types or startup details. Inputs remain visible and editable in
+`Order.java`, `OrderFixtures.java` and `fixtures/baseline.json`.
 There is no preview mode. Missing arguments fail with usage instead of connecting.
 The build's offline unit tests remain separate from this live workflow.
 
@@ -192,10 +189,10 @@ and excluded from both builds' JARs. Put `src/main/resources` on the runtime
 classpath **after the JAR** to load these files without packaging secrets.
 Keeping the JAR first also preserves its safe logging configuration.
 On Windows separate classpath entries with `;`; on Linux/macOS use `:`.
-Other samples' configuration code is unchanged.
+The shared loader no longer prints a successful configuration-load banner.
 Never paste account keys into source, commands recorded in shell history, chat, logs,
 or a JAR. Provider diagnostic logging is disabled in this profile. Errors print
-operation, exception type and SDK error category, not native messages/causes that
+exception type, SDK error category and status code, not native messages/causes that
 could expose credentials. Diagnose access errors privately in your cloud tooling.
 
 The sample checks for missing required properties and a provider/argument mismatch.
@@ -347,20 +344,16 @@ environment.
 ## Read results and clean up
 
 The sample calls the public SDK:
-**create -> read -> update -> read -> upsert -> read -> query -> delete**.
-It prints outgoing and returned Maps/types plus restored POJOs and compares reads,
-queries, and restored objects to independent expected data.
-
-Additional failure probes run after the
-confirmed create, using the same owned key or a read-only `-never-created` key.
-They do not provision resources or write a separate failure-test document.
+**create -> read -> update -> read -> upsert -> query -> delete**.
+It compares reads, queries and restored POJOs to independent expected data.
+Successful checks print `PASS`; document values are included only in mismatch errors.
 
 The deliberate small `update` body contains only order ID, run ID, revision and
 status. **Current Cosmos/Dynamo update replaces the entire document**, so the
 sample verifies the customer, items, and other omitted fields disappear. It does
 not pretend this is a patch; the following full-POJO upsert restores them.
-Known root provider fields (`id`, keys, Cosmos metadata) are printed and then
-excluded from POJO comparison; unexpected application fields still fail.
+Known root provider fields (`id`, keys, Cosmos metadata) are excluded from
+POJO comparison; unexpected application fields still fail.
 
 Reads retry only missing/stale revision visibility, at most five attempts with
 250 ms intervals. Query follows continuation tokens, at most ten pages per attempt
@@ -374,61 +367,34 @@ comparison, or cleanup failed. An exception or assertion failure stops the workf
 steps, so do not infer those steps ran from the overall command completing.
 
 After **confirmed successful create**, a `try-with-resources` cleanup action deletes
-only its exact partitionKey + sortKey/id and checks for absence, on success or failure.
+only its exact partitionKey + sortKey/id, on success or failure.
+`PASS delete` means the SDK delete call completed; the sample does not add a separate
+post-delete polling loop.
 If cleanup also fails, Java keeps the original exception and adds the cleanup error
 as a suppressed exception. The client is closed by a separate `try-with-resources`.
 A conflict or otherwise
 unconfirmed create is never blindly deleted. Ambiguous writes, failed cleanup,
-Ctrl+C, process termination, or machine loss can leave data. Save the printed
-run ID and exact candidate key: `jackson-baseline`.
-In the portal/your own tooling inspect only that
-exact key and delete a document you confirm belongs to that run. Never delete all
+Ctrl+C, process termination, or machine loss can leave data. On a caught workflow
+failure, the error output includes the run's partition key and document key
+`jackson-baseline`. In the portal/your own tooling inspect only that exact key and
+delete a document you confirm belongs to that run. If abrupt termination prevents
+that error output, establish ownership from the document's run ID and synthetic
+contents before deleting anything. Never delete all
 documents by a shared prefix, the container, database, or table as cleanup.
 
-## Failures and diagnostics: current public contract
+## Failures
 
-Read `demonstrateFailureHandling` beside `exercise`, rather than treating this table
-as a proposed API:
+The workflow throws on an SDK error, mapping error or failed comparison.
+Only `main` replaces the failure with a sanitized exception for console output.
+For SDK failures it shows the category and nullable status code, not native
+messages, causes, provider details or diagnostics. Additional cleanup/client-close
+failures are reported by count; inspect only the printed document key.
 
-| Case | Current customer code / response | Information actually available |
-| --- | --- | --- |
-| Missing point read | Branch on `client.read(...) == null`; choose the application's not-found response | No exception and no `DocumentResult`; no status or request ID is invented |
-| Duplicate `create` of this run's confirmed key | Catch `MulticloudDbException`, branch on `error().category() == CONFLICT`, keep the existing document | `error().provider()`, `operation()`, raw nullable `statusCode()`, `retryable()` hint; optional `diagnostics()` |
-| Unsupported `Instant` left directly in a Map | Catch `INVALID_REQUEST`; fix customer mapping before retrying | Client-side validation can have no provider status/request ID. This is deliberately not the configured ISO-string path |
-| Any other SDK error during an expected-error probe | Rethrow immediately; owned-key cleanup is still attempted | Authentication/throttling/etc. must not be reported as a successful conflict/validation test |
-| Successful query | Inspect `QueryPage.diagnostics()` if non-null | Provider, operation, duration, optional request ID/status, item count; unavailable fields remain unavailable |
-| Successful point read | Opt in with `OperationOptions.builder().includeMetadata(true)` | `DocumentResult.metadata()` is **write metadata**, not operation diagnostics: optional last-modified/TTL/version; no point-read request-ID getter is fabricated |
-
-Use the **category** for portable classification, not the native status number.
-For example, the pinned mappers classify a Cosmos duplicate's HTTP 409 and a
-Dynamo conditional-write failure's HTTP 400 as CONFLICT. Those are source-contract
-examples, **not measured live results**. `error().statusCode()` and
-`diagnostics().statusCode()` are separate optional fields: at this pin the wrapper
-enriches failures with duration/request ID but does not copy error status into
-diagnostics. A null diagnostics status does not mean the error status was absent.
-
-The sample prints an allowlist of public scalar fields. It does **not** dump
-`error().message()`, `providerDetails()`, native causes, ETags, session tokens,
-payloads, credentials or full diagnostics objects. Request IDs are bounded and
-restricted to identifier characters before display. Payloads shown elsewhere are
-the intentional synthetic input/result display, not error diagnostics.
-There is **no direct native exception dependency** in the POJO error-handling
-example. Additional provider-detail keys are opaque and need a separate redaction
-policy if an application chooses to use them.
-
-Only `main` translates unexpected failures into a sanitized exception for console
-output; native messages, causes and suppressed exception text are not attached.
-Sample assertion messages retain their comparison/property details, and additional
-cleanup/client-close failures are reported by count. The workflow itself propagates
-errors directly. Expected CONFLICT/INVALID_REQUEST catches remain solely for the
-two deliberate failure examples, not as general error wrappers.
-
-Successful create/update/upsert/delete return `void`; this sample cannot extract
-a success request ID from them. Missing diagnostics is displayed, never filled
-with a fabricated value. `retryable()` is a hint, not an instruction to retry
-non-idempotent operations blindly. No exceptionless write API is added. Neither
-exception-path overhead nor performance differences have been benchmarked;
-printing one operation's supplied duration is not such a measurement.
+Sample assertion messages include the expected/actual synthetic values or the
+missing property's name, never a configured credential. There is no failure counter,
+catch-and-continue loop, or automatic retry of writes. The short read/query loops
+only wait for missing/stale results to become visible. Error-contract and metadata
+demonstrations are intentionally outside this POJO walkthrough.
 
 ## Existing apps: migration smoke and review status
 
@@ -448,7 +414,7 @@ resource tree, restoring both apps' HTML without packaging account configs.
 
 | Surface | Executed verification | Still not verified |
 | --- | --- | --- |
-| Complex POJO | Offline: one fixture through Jackson, exact comparisons; fake orchestration, failure branches and diagnostics redaction tests | Native Cosmos/Dynamo errors, query diagnostics and cleanup against live targets |
+| Complex POJO | Offline: one fixture through Jackson, exact comparisons; fake CRUD/query, visibility retries, fail-fast cleanup and error redaction | Native Cosmos/Dynamo persistence, queries and cleanup against live targets |
 | Risk Platform | Local HTTP + fake SDK: tenant create/read/list, portfolio/position creation and partition query, dashboard AUM/open-alert aggregation, read-merge-upsert alert acknowledgement preserving fields, missing 404 and injected SDK-error 500, static HTML response | Native provider mapping, complete demo seeding, browser JavaScript/visual UX, emulator/live E2E |
 | TODO | Local HTTP + fake SDK: create/read/list, read-merge-upsert preserving title/date, delete, missing 404, SDK category in the existing 500 response, static HTML response | Native persistence/query behavior, browser interaction, concurrent updates, emulator/live E2E |
 | Change Feed | Offline public cursor serialization/resume callback round-trip and malformed-token exception; synthetic nested Map/null/empty payload rendering through the actual watcher formatter | Hydrated native cursors, feed delivery/order, consumer-thread error handling, retention/AVAD, emulator/live E2E |
@@ -534,7 +500,7 @@ live account and is intentionally not part of this offline/local verification.
 | --- | --- | --- |
 | Mapping/date/null policy is customer boilerplate | Explicit Jackson settings and direct calls, one visible fixture and exact comparisons | Documentation/usability review; no automatic serializer redesign |
 | Cosmos/Dynamo `update` replaces; existing TODO edits and Risk alert acknowledgement merge client-side then upsert | Keep current business behavior and verify preserved fields | Concurrent lost-update risk remains. Any partial-update work would improve the existing update API; a separate API is not agreed |
-| Missing read is null; duplicate/invalid writes throw; diagnostics availability differs by path/provider | Explicit null branch and category catches in POJO; optional fields displayed honestly | Evaluate exceptionless failure handling and diagnostics consistency; no new API or overhead claim |
+| Missing read is null; writes can throw | Briefly wait for read visibility; propagate errors and display only category/status at the console boundary | Detailed error-contract and diagnostics evaluation is outside this simplified walkthrough; no new API or overhead claim |
 | Existing app HTTP error policies are simplistic | Smoke records TODO's category-bearing 500 and Risk's generic 500; no redesign of all handlers | Existing handlers may echo exception messages, and do not surface diagnostics. Harden before customer deployment; do not treat legacy app logs/HTTP as sanitized |
 | Existing list methods consume one QueryPage; watcher/consumer failure policies are not a full resilient feed processor | Small fake scenarios only; actual feed/thread behavior remains unverified | Review pagination, resumability, terminal cursors and error policy with realistic data |
 | Native configuration and resources matter after compile succeeds | Remove rejected transport config; include static assets without credentials | Run actual local/native smoke and Windows checks before declaring apps migration-complete |
@@ -545,8 +511,7 @@ live account and is intentionally not part of this offline/local verification.
 - Review required setup/boilerplate and failure-path code in the four linked files; note unclear ownership or surprising defaults.
 - Inspect nested objects/lists/maps, enums, dates, and null versus missing. Numeric limits are outside this sample's scope; do not accept coercion as a hidden fix.
 - Confirm replacement `update` versus app-side read/merge/upsert, including concurrency limitations.
-- Review null returns, expected categories, unexpected exceptions, retry hints, and whether an exceptionless alternative is worth future investigation.
-- Use only available diagnostics to trace a problem; record missing request/status information without dumping native text or tokens.
+- Review missing/stale reads, immediate failure on errors, and exact-key cleanup.
 - Record provider/runtime, pinned SHA, exact input, observed behavior, current workaround, and a separate proposed follow-up. Human review, live/Windows verification and release approval remain open.
 
 ## Evidence and limits

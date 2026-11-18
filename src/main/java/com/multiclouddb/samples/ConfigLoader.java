@@ -169,7 +169,6 @@ public final class ConfigLoader {
         try (InputStream is = ConfigLoader.class.getClassLoader().getResourceAsStream(filename)) {
             if (is != null) {
                 props.load(is);
-                System.out.println("  Loaded config: " + filename);
             } else {
                 System.out.println("  Config file not found: " + filename
                         + " — using system properties only");

@@ -16,10 +16,12 @@ import com.multiclouddb.api.QueryRequest;
 import com.multiclouddb.api.ResourceAddress;
 import org.junit.jupiter.api.Test;
 
+import java.io.ByteArrayOutputStream;
+import java.io.PrintStream;
 import java.lang.reflect.Proxy;
 import java.math.BigDecimal;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
-import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -27,8 +29,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 
-import static com.multiclouddb.samples.serialization.ComplexPojoSample.MAPPER;
-import static com.multiclouddb.samples.serialization.ComplexPojoSample.MAP_TYPE;
+import static com.multiclouddb.samples.serialization.ComplexPojoSample.*;
 import static org.junit.jupiter.api.Assertions.*;
 
 class ComplexPojoSampleTest {
@@ -38,20 +39,20 @@ class ComplexPojoSampleTest {
         Order input = OrderFixtures.create("unit-test", 1);
         Map<String, Object> returned = untyped.readValue(
                 untyped.writeValueAsString(MAPPER.convertValue(input, MAP_TYPE)), MAP_TYPE);
-        Map<String, Object> expected = ExpectedDocuments.load("unit-test", 1);
-        assertEquals(List.of(), ExpectedDocuments.differences(expected, returned));
+        Map<String, Object> expected = loadExpected("unit-test", 1);
+        assertTrue(documentsEqual(expected, returned));
         Order restored = MAPPER.convertValue(returned, Order.class);
-        assertEquals(List.of(), ExpectedDocuments.differences(expected, MAPPER.convertValue(restored, MAP_TYPE)));
+        assertTrue(documentsEqual(expected, MAPPER.convertValue(restored, MAP_TYPE)));
         returned.put("sequence", input.sequence() + 1);
-        assertFalse(ExpectedDocuments.differences(expected, returned).isEmpty());
+        assertFalse(documentsEqual(expected, returned));
     }
 
     @Test
     void jacksonMatchesIndependentFixtureAndRestoresJavaTypes() throws Exception {
         Order input = OrderFixtures.create("unit-test", 1);
-        Map<String, Object> expected = ExpectedDocuments.load("unit-test", 1);
+        Map<String, Object> expected = loadExpected("unit-test", 1);
         Map<String, Object> document = MAPPER.convertValue(input, MAP_TYPE);
-        assertEquals(List.of(), ExpectedDocuments.differences(expected, document));
+        assertTrue(documentsEqual(expected, document));
         Order restored = MAPPER.convertValue(document, Order.class);
         assertEquals(input, restored);
         assertTrue(document.containsKey("note"));
@@ -62,27 +63,32 @@ class ComplexPojoSampleTest {
 
     @Test
     void comparatorDistinguishesValueChangesAndMissingVersusNull() {
-        assertTrue(ExpectedDocuments.differences(new BigDecimal("125.50"), 125.5).isEmpty());
-        assertFalse(ExpectedDocuments.differences(new BigDecimal("125.50"), 125.0).isEmpty());
+        assertTrue(documentsEqual(new BigDecimal("125.50"), 125.5));
+        assertFalse(documentsEqual(new BigDecimal("125.50"), 125.0));
         Map<String, Object> nullable = new LinkedHashMap<>();
         nullable.put("note", null);
-        assertFalse(ExpectedDocuments.differences(nullable, Map.of()).isEmpty());
-        assertFalse(ExpectedDocuments.differences(Map.of(), nullable).isEmpty());
-        assertFalse(ExpectedDocuments.differences(List.of(1, 2), List.of(1)).isEmpty());
+        assertFalse(documentsEqual(nullable, Map.of()));
+        assertFalse(documentsEqual(Map.of(), nullable));
+        assertFalse(documentsEqual(List.of(1, 2), List.of(1)));
+        assertFalse(documentsEqual(List.of(1, 2), List.of(2, 1)));
+        assertTrue(documentsEqual(Map.of("items", List.of(new BigDecimal("1.00"))),
+                Map.of("items", List.of(1L))));
+        assertFalse(documentsEqual(Map.of("items", List.of(1)), Map.of("items", List.of("1"))));
+        assertFalse(documentsEqual(new BigDecimal("1.0000000000000001"), new BigDecimal("1.0")));
     }
 
     @Test
     void providerFieldsAreRemovedOnlyAtRootAndUnexpectedApplicationFieldsStillFail() throws Exception {
-        Map<String, Object> expected = ExpectedDocuments.load("test", 1);
+        Map<String, Object> expected = loadExpected("test", 1);
         Map<String, Object> returned = new LinkedHashMap<>(expected);
         returned.put("id", "case");
         returned.put("partitionKey", "test");
         returned.put("_etag", "synthetic");
-        assertEquals(List.of(), ExpectedDocuments.differences(expected, ExpectedDocuments.payload(returned)));
+        assertTrue(documentsEqual(expected, payload(returned)));
         returned.put("unexpected", true);
-        assertFalse(ExpectedDocuments.differences(expected, ExpectedDocuments.payload(returned)).isEmpty());
-        assertTrue(ExpectedDocuments.payload(Map.of("nested", Map.of("id", "business-id")))
-                .containsKey("nested"));
+        assertFalse(documentsEqual(expected, payload(returned)));
+        assertEquals(Map.of("nested", Map.of("id", "business-id")),
+                payload(Map.of("nested", Map.of("id", "business-id"))));
     }
 
     @Test
@@ -105,10 +111,6 @@ class ComplexPojoSampleTest {
             assertEquals("own-run", key.partitionKey());
             switch (method) {
                 case "create", "update", "upsert" -> {
-                    if (method.equals("create") && args[2] instanceof Map<?, ?> input
-                            && input.get("unmappedInstant") instanceof Instant) {
-                        throw failure(MulticloudDbErrorCategory.INVALID_REQUEST, null);
-                    }
                     if (method.equals("create") && store.containsKey(key)) {
                         throw failure(MulticloudDbErrorCategory.CONFLICT, 400);
                     }
@@ -131,9 +133,20 @@ class ComplexPojoSampleTest {
                 default -> throw new AssertionError("Unexpected SDK call " + method);
             }
         });
-        new ComplexPojoSample().exercise(client, new ResourceAddress("db", "orders"), "own-run");
-        assertEquals(List.of("create", "read", "create", "create", "read",
-                "update", "read", "upsert", "read", "query", "delete", "read"), operations);
+        ByteArrayOutputStream output = new ByteArrayOutputStream();
+        PrintStream originalOut = System.out;
+        try (PrintStream captured = new PrintStream(output, true, StandardCharsets.UTF_8)) {
+            System.setOut(captured);
+            new ComplexPojoSample().exercise(client, new ResourceAddress("db", "orders"), "own-run");
+        } finally {
+            System.setOut(originalOut);
+        }
+
+        List<String> lines = output.toString(StandardCharsets.UTF_8).lines().toList();
+        assertFalse(lines.isEmpty());
+        assertTrue(lines.stream().allMatch(line -> line.startsWith("PASS ")), lines.toString());
+        assertEquals(List.of("create", "read",
+                "update", "read", "upsert", "query", "delete"), operations);
         assertEquals(Map.of(unrelated, Map.of("business", "untouched")), store);
     }
 
@@ -155,7 +168,7 @@ class ComplexPojoSampleTest {
                     new ComplexPojoSample().exercise(client, new ResourceAddress("db", "orders"), "own-run"));
             assertEquals(createSucceeds ? "Simulated read failure" : "Simulated unconfirmed write",
                     failure.getMessage());
-            assertEquals(createSucceeds ? List.of("create", "read", "delete", "read") : List.of("create"), operations);
+            assertEquals(createSucceeds ? List.of("create", "read", "delete") : List.of("create"), operations);
         }
     }
 
@@ -174,7 +187,7 @@ class ComplexPojoSampleTest {
             return new QueryPage(List.of(Map.of("id", "case", "revision", 3, "runId", "own-run")), null);
         });
         assertEquals(1, ComplexPojoSample.awaitQuery(client,
-                new ResourceAddress("db", "orders"), "own-run", "case").size());
+                new ResourceAddress("db", "orders"), "own-run").size());
         assertEquals(2, calls.get());
     }
 
@@ -186,47 +199,34 @@ class ComplexPojoSampleTest {
             return new QueryPage(List.of(), "endless");
         });
         assertThrows(AssertionError.class, () -> ComplexPojoSample.awaitQuery(client,
-                new ResourceAddress("db", "orders"), "own-run", "case"));
+                new ResourceAddress("db", "orders"), "own-run"));
         assertEquals(10, calls.get());
     }
 
     @Test
-    void unexpectedAuthenticationFailureIsNotTreatedAsAnExpectedConflict() {
+    void authenticationFailureStopsBeforeReadOrDelete() {
         List<String> operations = new ArrayList<>();
         MulticloudDbException denied = failure(MulticloudDbErrorCategory.AUTHENTICATION_FAILED, 400);
         var client = fake((method, args) -> {
             operations.add(method);
-            if (method.equals("read")) {
-                return null;
-            }
             throw denied;
         });
         assertSame(denied, assertThrows(MulticloudDbException.class, () ->
-                new ComplexPojoSample().demonstrateFailureHandling(client, new ResourceAddress("db", "orders"),
-                        MulticloudDbKey.of("own-run", "baseline"), Map.of("runId", "own-run"))));
-        assertEquals(List.of("read", "create"), operations);
+                new ComplexPojoSample().exercise(client, new ResourceAddress("db", "orders"), "own-run")));
+        assertEquals(List.of("create"), operations);
     }
 
     @Test
     void comparisonFailureStopsBeforeUpdateAndStillDeletesOwnedDocument() throws Exception {
         List<String> operations = new ArrayList<>();
-        Map<String, Object> returned = ExpectedDocuments.load("own-run", 1);
+        Map<String, Object> returned = loadExpected("own-run", 1);
         returned.put("note", "unexpected");
-        AtomicInteger creates = new AtomicInteger();
         AtomicInteger reads = new AtomicInteger();
         var client = fake((method, args) -> {
             operations.add(method);
             return switch (method) {
-                case "create" -> {
-                    switch (creates.incrementAndGet()) {
-                        case 2 -> throw failure(MulticloudDbErrorCategory.CONFLICT, 409);
-                        case 3 -> throw failure(MulticloudDbErrorCategory.INVALID_REQUEST, null);
-                        default -> { }
-                    }
-                    yield null;
-                }
-                case "read" -> reads.incrementAndGet() == 2 ? new DocumentResult(returned) : null;
-                case "delete" -> null;
+                case "read" -> reads.incrementAndGet() == 1 ? new DocumentResult(returned) : null;
+                case "create", "delete" -> null;
                 default -> throw new AssertionError("Must not continue to " + method);
             };
         });
@@ -234,8 +234,8 @@ class ComplexPojoSampleTest {
         AssertionError error = assertThrows(AssertionError.class, () ->
                 new ComplexPojoSample().exercise(client, new ResourceAddress("db", "orders"), "own-run"));
         assertTrue(error.getMessage().contains("read vs independent expected"));
-        assertTrue(error.getMessage().contains("$.note"));
-        assertEquals(List.of("create", "read", "create", "create", "read", "delete", "read"), operations);
+        assertTrue(error.getMessage().contains("note=unexpected"));
+        assertEquals(List.of("create", "read", "delete"), operations);
     }
 
     @Test
@@ -261,37 +261,49 @@ class ComplexPojoSampleTest {
     }
 
     @Test
-    void unexpectedSuccessInFailureProbeThrowsImmediately() {
-        List<String> operations = new ArrayList<>();
+    void readWaitsForVisibilityButDoesNotRetryExceptions() throws Exception {
+        AtomicInteger reads = new AtomicInteger();
         var client = fake((method, args) -> {
-            operations.add(method);
-            return null;
+            assertEquals("read", method);
+            return switch (reads.incrementAndGet()) {
+                case 1 -> null;
+                case 2 -> new DocumentResult(Map.of("revision", 1));
+                default -> new DocumentResult(Map.of("revision", 3));
+            };
         });
-        AssertionError error = assertThrows(AssertionError.class, () ->
-                new ComplexPojoSample().demonstrateFailureHandling(client, new ResourceAddress("db", "orders"),
-                        MulticloudDbKey.of("own-run", "baseline"), Map.of("runId", "own-run")));
-        assertEquals("Duplicate create unexpectedly succeeded", error.getMessage());
-        assertEquals(List.of("read", "create"), operations);
+        var address = new ResourceAddress("db", "orders");
+        var key = MulticloudDbKey.of("own-run", "baseline");
+        assertEquals(Map.of("revision", 3), awaitRead(client, address, key, 3));
+        assertEquals(3, reads.get());
+
+        reads.set(0);
+        MulticloudDbException denied = failure(MulticloudDbErrorCategory.AUTHENTICATION_FAILED, 400);
+        var failingClient = fake((method, args) -> {
+            reads.incrementAndGet();
+            throw denied;
+        });
+        assertSame(denied, assertThrows(MulticloudDbException.class, () ->
+                awaitRead(failingClient, address, key, 3)));
+        assertEquals(1, reads.get());
     }
 
     @Test
-    void diagnosticsExposeActualOptionalFieldsWithoutNativeTextOrTokens() {
+    void failureMessageExposesOnlyCategoryAndStatusWithoutNativeTextOrTokens() {
         MulticloudDbException error = new MulticloudDbException(new MulticloudDbError(
                 MulticloudDbErrorCategory.CONFLICT, "PRIVATE-MESSAGE", ProviderId.DYNAMO, "create", false,
                 400, Map.of("nativeMessage", "PRIVATE-DETAIL")), new RuntimeException("PRIVATE-CAUSE"))
                 .withDiagnostics(OperationDiagnostics.builder(ProviderId.DYNAMO, "create", Duration.ofMillis(4))
                         .requestId("synthetic-request-1").etag("PRIVATE-ETAG").sessionToken("PRIVATE-SESSION").build());
-        String text = ComplexPojoSample.errorSummary(error);
+        error.addSuppressed(new RuntimeException("PRIVATE-CLEANUP"));
+        String text = safeFailureMessage(error);
         assertTrue(text.contains("category=CONFLICT"));
         assertTrue(text.contains("statusCode=400"));
-        assertTrue(text.contains("requestId=synthetic-request-1"));
-        assertTrue(text.contains("statusCode=null")); // Error status and diagnostics status are distinct.
+        assertTrue(text.contains("cleanup/client-close failures=1"));
         assertFalse(text.contains("PRIVATE"));
-        assertTrue(ComplexPojoSample.errorSummary(failure(MulticloudDbErrorCategory.INVALID_REQUEST, null))
-                .contains("diagnostics=<unavailable>"));
-        assertTrue(ComplexPojoSample.diagnosticsSummary(
-                OperationDiagnostics.builder(ProviderId.COSMOS, "query", Duration.ZERO)
-                        .requestId("bad\nidentifier").build()).contains("requestId=<redacted>"));
+        assertFalse(text.contains("synthetic-request-1"));
+        assertTrue(safeFailureMessage(failure(MulticloudDbErrorCategory.INVALID_REQUEST, null))
+                .contains("statusCode=null"));
+        assertFalse(safeFailureMessage(new IllegalArgumentException("PRIVATE-CONFIG")).contains("PRIVATE"));
     }
 
     private static MulticloudDbException failure(MulticloudDbErrorCategory category, Integer status) {

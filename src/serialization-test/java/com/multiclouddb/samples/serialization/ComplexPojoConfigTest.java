@@ -57,7 +57,6 @@ class ComplexPojoConfigTest {
         for (var entry : cases.entrySet()) {
             Files.writeString(directory.resolve("serialization-cosmos-cloud.properties"), entry.getKey());
             String output = rejected(List.of("cosmos"), Map.of());
-            assertTrue(output.contains("Loaded config: serialization-cosmos-cloud.properties"), output);
             assertTrue(output.contains(entry.getValue()), output);
         }
     }
@@ -68,7 +67,6 @@ class ComplexPojoConfigTest {
                 CONFIG.replace("synthetic-db", "").replace("synthetic-private-key", ""));
         String output = rejected(List.of("cosmos"), Map.of(
                 "multiclouddb.config", "chosen.properties", "multiclouddb.database", "overridden-db"));
-        assertTrue(output.contains("Loaded config: chosen.properties"), output);
         assertTrue(output.contains("Missing required property: multiclouddb.connection.key"), output);
         assertFalse(output.contains("Missing required property: multiclouddb.database"), output);
     }
@@ -92,7 +90,6 @@ class ComplexPojoConfigTest {
                 CONFIG.replace("provider=cosmos", "provider=dynamo")
                         + "multiclouddb.connection.region=\n");
         String output = rejected(List.of("dynamo"), Map.of());
-        assertTrue(output.contains("Loaded config: serialization-dynamo-cloud.properties"), output);
         assertTrue(output.contains("Missing required property: multiclouddb.connection.region"), output);
     }
 
