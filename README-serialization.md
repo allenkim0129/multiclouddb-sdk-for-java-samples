@@ -175,6 +175,16 @@ released-SDK Maven profile or its compiler output. `.vscode/settings.json` disab
 the Java debugger's extra automatic build because the pre-launch task owns this build.
 SDK source paths are included for stepping into the pinned SDK with **F11**.
 
+The build also generates `.local/serialization-maven-settings.xml`. The workspace's
+`java.configuration.maven.userSettings` points to this file so editor type analysis
+uses `serialization-pr` and the same isolated SDK repository, rather than released
+dependencies. This affects this VS Code workspace, not your normal Maven user settings.
+If the editor still shows `document()` returning `JsonNode` instead of
+`Map<String, Object>`, run the build script once, then use **Ctrl+Shift+P →
+Java: Clean Java Language Server Workspace** and confirm the restart. Wait for
+Java project import to finish. Do not select **Run Java** to fix a stale import;
+use the named launch configurations above after rebuilding.
+
 **F5 starts real database operations after the build succeeds.** Use only your
 configured disposable test target. Let execution finish so `finally` can delete
 the test document; forcibly stopping the debugger can leave that document behind.

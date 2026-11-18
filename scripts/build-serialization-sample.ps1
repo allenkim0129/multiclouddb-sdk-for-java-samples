@@ -89,9 +89,23 @@ try {
     }
     $evidence | Set-Content -Encoding UTF8 'target/serialization-build-evidence.txt'
 
+    # VS Code's Java language server imports Maven separately from the launch task.
+    # Give it the same profile and absolute local repository, without changing ~/.m2/settings.xml.
+    $escapedRepo = [System.Security.SecurityElement]::Escape($Repo)
+    @"
+<?xml version="1.0" encoding="UTF-8"?>
+<settings xmlns="http://maven.apache.org/SETTINGS/1.0.0">
+  <localRepository>$escapedRepo</localRepository>
+  <activeProfiles>
+    <activeProfile>serialization-pr</activeProfile>
+  </activeProfiles>
+</settings>
+"@ | Set-Content -Encoding UTF8 '.local/serialization-maven-settings.xml'
+
     Write-Host 'Built and checked offline. No live account was accessed.'
     Write-Host 'Run the live sample separately after configuring your test target: cosmos (or dynamo).'
     Write-Host 'Evidence: target/serialization-build-evidence.txt and target/serialization-dependencies.txt'
+    Write-Host 'VS Code Maven settings: .local/serialization-maven-settings.xml'
 } finally {
     Pop-Location
 }
