@@ -277,30 +277,24 @@ class ComplexPojoSampleTest {
     }
 
     @Test
-    void readWaitsForVisibilityButDoesNotRetryExceptions() throws Exception {
-        AtomicInteger reads = new AtomicInteger();
-        var client = fake((method, args) -> {
-            assertEquals("read", method);
-            return switch (reads.incrementAndGet()) {
-                case 1 -> null;
-                case 2 -> new DocumentResult(Map.of("revision", 1));
-                default -> new DocumentResult(Map.of("revision", 3));
-            };
-        });
-        var address = new ResourceAddress("db", "orders");
-        var key = MulticloudDbKey.of("own-run", "baseline");
-        assertEquals(Map.of("revision", 3), awaitRead(client, address, key, 3));
-        assertEquals(3, reads.get());
+    void missingOrStaleReadFailsWithoutRetryAndStillDeletesOwnedDocument() throws Exception {
+        for (boolean missing : List.of(true, false)) {
+            Map<String, Object> stale = inputDocument("own-run", 0);
+            List<String> operations = new ArrayList<>();
+            var client = fake((method, args) -> {
+                operations.add(method);
+                return switch (method) {
+                    case "create", "delete" -> null;
+                    case "read" -> missing ? null : new DocumentResult(stale);
+                    default -> throw new AssertionError("Must not continue to " + method);
+                };
+            });
 
-        reads.set(0);
-        MulticloudDbException denied = failure(MulticloudDbErrorCategory.AUTHENTICATION_FAILED, 400);
-        var failingClient = fake((method, args) -> {
-            reads.incrementAndGet();
-            throw denied;
-        });
-        assertSame(denied, assertThrows(MulticloudDbException.class, () ->
-                awaitRead(failingClient, address, key, 3)));
-        assertEquals(1, reads.get());
+            AssertionError error = assertThrows(AssertionError.class, () ->
+                    new ComplexPojoSample().exercise(client, new ResourceAddress("db", "orders"), "own-run"));
+            assertTrue(error.getMessage().contains(missing ? "Document not found after create" : "read vs original"));
+            assertEquals(List.of("create", "read", "delete"), operations);
+        }
     }
 
     @Test

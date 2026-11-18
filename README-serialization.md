@@ -362,8 +362,8 @@ The following upsert writes a fresh order from the JSON input (`NEW`, revision `
 Known root provider fields (`id`, keys, Cosmos metadata) are excluded from
 POJO comparison; unexpected application fields still fail.
 
-Reads retry only missing/stale revision visibility, at most five attempts with
-250 ms intervals. Query follows continuation tokens, at most ten pages per attempt
+Point reads call `client.read()` once, without waiting or retrying. Missing or stale
+data fails the check immediately. Query follows continuation tokens, at most ten pages per attempt
 and five attempts. Value differences are **not retried away or excused**.
 An unexpected operation error or failed comparison throws immediately.
 There is no failure accumulation or continuation after a mismatch.
@@ -400,8 +400,8 @@ failures are reported by count; inspect only the printed document key.
 
 Sample assertion messages include the expected/actual synthetic values or the
 missing property's name, never a configured credential. There is no failure counter,
-catch-and-continue loop, or automatic retry of writes. The short read/query loops
-only wait for missing/stale results to become visible. Error-contract and metadata
+catch-and-continue loop, or automatic retry of writes or point reads. Only the query
+helper waits for missing/stale results to become visible. Error-contract and metadata
 demonstrations are intentionally outside this POJO walkthrough.
 
 ## Existing apps: migration smoke and review status
@@ -422,7 +422,7 @@ resource tree, restoring both apps' HTML without packaging account configs.
 
 | Surface | Executed verification | Still not verified |
 | --- | --- | --- |
-| Complex POJO | Offline: one fixture through Jackson, exact comparisons; fake CRUD/query, visibility retries, fail-fast cleanup and error redaction | Native Cosmos/Dynamo persistence, queries and cleanup against live targets |
+| Complex POJO | Offline: one fixture through Jackson, exact comparisons; fake CRUD/query, single-read failure behavior, fail-fast cleanup and error redaction | Native Cosmos/Dynamo persistence, queries and cleanup against live targets |
 | Risk Platform | Local HTTP + fake SDK: tenant create/read/list, portfolio/position creation and partition query, dashboard AUM/open-alert aggregation, read-merge-upsert alert acknowledgement preserving fields, missing 404 and injected SDK-error 500, static HTML response | Native provider mapping, complete demo seeding, browser JavaScript/visual UX, emulator/live E2E |
 | TODO | Local HTTP + fake SDK: create/read/list, read-merge-upsert preserving title/date, delete, missing 404, SDK category in the existing 500 response, static HTML response | Native persistence/query behavior, browser interaction, concurrent updates, emulator/live E2E |
 | Change Feed | Offline public cursor serialization/resume callback round-trip and malformed-token exception; synthetic nested Map/null/empty payload rendering through the actual watcher formatter | Hydrated native cursors, feed delivery/order, consumer-thread error handling, retention/AVAD, emulator/live E2E |
@@ -508,7 +508,7 @@ live account and is intentionally not part of this offline/local verification.
 | --- | --- | --- |
 | Mapping/date/null policy is customer boilerplate | Explicit Jackson settings and direct calls, one visible fixture and exact comparisons | Documentation/usability review; no automatic serializer redesign |
 | Cosmos/Dynamo `update` replaces; existing TODO edits and Risk alert acknowledgement merge client-side then upsert | Keep current business behavior and verify preserved fields | Concurrent lost-update risk remains. Any partial-update work would improve the existing update API; a separate API is not agreed |
-| Missing read is null; writes can throw | Briefly wait for read visibility; propagate errors and display only category/status at the console boundary | Detailed error-contract and diagnostics evaluation is outside this simplified walkthrough; no new API or overhead claim |
+| Missing read is null; writes can throw | Read once and fail if absent or mismatched; propagate errors and display only category/status at the console boundary | Detailed error-contract and diagnostics evaluation is outside this simplified walkthrough; no new API or overhead claim |
 | Existing app HTTP error policies are simplistic | Smoke records TODO's category-bearing 500 and Risk's generic 500; no redesign of all handlers | Existing handlers may echo exception messages, and do not surface diagnostics. Harden before customer deployment; do not treat legacy app logs/HTTP as sanitized |
 | Existing list methods consume one QueryPage; watcher/consumer failure policies are not a full resilient feed processor | Small fake scenarios only; actual feed/thread behavior remains unverified | Review pagination, resumability, terminal cursors and error policy with realistic data |
 | Native configuration and resources matter after compile succeeds | Remove rejected transport config; include static assets without credentials | Run actual local/native smoke and Windows checks before declaring apps migration-complete |

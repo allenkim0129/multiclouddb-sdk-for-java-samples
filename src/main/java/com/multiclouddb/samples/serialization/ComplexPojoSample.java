@@ -114,7 +114,9 @@ public final class ComplexPojoSample {
             System.out.println("PASS create");
 
             // Read the stored Map and restore the complex Order directly with Jackson.
-            Map<String, Object> returned = awaitRead(client, address, key, 1);
+            DocumentResult readResult = client.read(address, key);
+            check(readResult != null, "Document not found after create");
+            Map<String, Object> returned = readResult.document();
             Map<String, Object> payload = payload(returned);
             checkEquals("read vs original", document, payload);
             Order restored = MAPPER.convertValue(payload, Order.class);
@@ -127,7 +129,9 @@ public final class ComplexPojoSample {
             Map<String, Object> updatedDocument = MAPPER.convertValue(restored, MAP_TYPE);
             client.update(address, key, updatedDocument);
 
-            Map<String, Object> afterUpdate = awaitRead(client, address, key, 2);
+            DocumentResult updateResult = client.read(address, key);
+            check(updateResult != null, "Document not found after POJO update");
+            Map<String, Object> afterUpdate = updateResult.document();
             checkEquals("update vs modified POJO", updatedDocument, payload(afterUpdate));
             Order restoredUpdate = MAPPER.convertValue(payload(afterUpdate), Order.class);
             checkEquals("restored updated POJO", restored, restoredUpdate);
@@ -139,7 +143,9 @@ public final class ComplexPojoSample {
             editedMap.put("revision", 3);
             client.update(address, key, editedMap);
 
-            Map<String, Object> afterMapUpdate = awaitRead(client, address, key, 3);
+            DocumentResult mapUpdateResult = client.read(address, key);
+            check(mapUpdateResult != null, "Document not found after Map update");
+            Map<String, Object> afterMapUpdate = mapUpdateResult.document();
             checkEquals("update vs edited Map", editedMap, payload(afterMapUpdate));
 
             // Demonstrate upsert with a fresh order from the JSON input (status NEW, revision 4).
@@ -219,20 +225,6 @@ public final class ComplexPojoSample {
         if (!condition) {
             throw new AssertionError(message); // Always active; no JVM -ea flag needed.
         }
-    }
-
-    // Live providers may briefly return an older revision. Retry visibility only, not errors
-    // or changed payload values; each comparison above fails immediately.
-    static Map<String, Object> awaitRead(MulticloudDbClient client, ResourceAddress address,
-                                       MulticloudDbKey key, int revision) throws InterruptedException {
-        for (int attempt = 0; attempt < 5; attempt++) {
-            DocumentResult result = client.read(address, key);
-            if (result != null && documentsEqual(revision, result.document().get("revision"))) {
-                return result.document();
-            }
-            Thread.sleep(250);
-        }
-        throw new AssertionError("Expected revision not visible after five reads");
     }
 
     static List<Map<String, Object>> awaitQuery(MulticloudDbClient client, ResourceAddress address,
