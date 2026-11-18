@@ -1,0 +1,53 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "type": "java",
+            "name": "Complex POJO - Cosmos (live)",
+            "request": "launch",
+            "mainClass": "com.multiclouddb.samples.serialization.ComplexPojoSample",
+            "args": ["cosmos"],
+            "cwd": "${workspaceFolder}",
+            "javaExec": "${env:JAVA_HOME}/bin/java",
+            "windows": {
+                "javaExec": "${env:JAVA_HOME}\\bin\\java.exe"
+            },
+            "classPaths": [
+                "${workspaceFolder}/target/multiclouddb-samples-1.0.0-SNAPSHOT-jar-with-dependencies.jar",
+                "${workspaceFolder}/src/main/resources"
+            ],
+            "sourcePaths": [
+                "${workspaceFolder}/src/main/java",
+                "${workspaceFolder}/.local/serialization-sdk/multiclouddb-api/src/main/java",
+                "${workspaceFolder}/.local/serialization-sdk/multiclouddb-provider-cosmos/src/main/java",
+                "${workspaceFolder}/.local/serialization-sdk/multiclouddb-provider-dynamo/src/main/java"
+            ],
+            "console": "integratedTerminal",
+            "preLaunchTask": "Build pinned serialization sample"
+        },
+        {
+            "type": "java",
+            "name": "Complex POJO - Dynamo (live)",
+            "request": "launch",
+            "mainClass": "com.multiclouddb.samples.serialization.ComplexPojoSample",
+            "args": ["dynamo"],
+            "cwd": "${workspaceFolder}",
+            "javaExec": "${env:JAVA_HOME}/bin/java",
+            "windows": {
+                "javaExec": "${env:JAVA_HOME}\\bin\\java.exe"
+            },
+            "classPaths": [
+                "${workspaceFolder}/target/multiclouddb-samples-1.0.0-SNAPSHOT-jar-with-dependencies.jar",
+                "${workspaceFolder}/src/main/resources"
+            ],
+            "sourcePaths": [
+                "${workspaceFolder}/src/main/java",
+                "${workspaceFolder}/.local/serialization-sdk/multiclouddb-api/src/main/java",
+                "${workspaceFolder}/.local/serialization-sdk/multiclouddb-provider-cosmos/src/main/java",
+                "${workspaceFolder}/.local/serialization-sdk/multiclouddb-provider-dynamo/src/main/java"
+            ],
+            "console": "integratedTerminal",
+            "preLaunchTask": "Build pinned serialization sample"
+        }
+    ]
+}

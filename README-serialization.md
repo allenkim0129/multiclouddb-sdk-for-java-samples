@@ -148,6 +148,39 @@ Maps, runtime types or startup details. Inputs remain visible and editable in
 There is no preview mode. Missing arguments fail with usage instead of connecting.
 The build's offline unit tests remain separate from this live workflow.
 
+### Run or debug in VS Code
+
+Open the **repository root folder** in VS Code, with **Extension Pack for Java**
+installed. Set `JAVA_HOME` to JDK 17 and put Java, Maven and Git on `PATH`;
+restart VS Code after changing environment variables. The Java extension's
+language-server runtime is separate from the JDK 17 used to build/run this sample.
+
+1. Configure your existing test target in
+   `src/main/resources/serialization-cosmos-cloud.properties` (or the Dynamo
+   equivalent), as described below. Keep credentials out of `.vscode` files.
+2. Open **Run and Debug** (`Ctrl+Shift+D`) and select
+   **Complex POJO - Cosmos (live)** or **Complex POJO - Dynamo (live)**.
+3. Optionally set a breakpoint on `client.create(...)` in `ComplexPojoSample.java`.
+4. Press **F5** to debug, or **Ctrl+F5** to run without debugging.
+
+The pre-launch task runs `scripts/build-serialization-sample.ps1` to build and
+verify the pinned SDK and sample before each launch. This can take several minutes;
+the build itself is offline with respect to your cloud accounts. If it fails,
+fix the build rather than choosing **Debug Anyway**, which could run stale artifacts.
+Windows uses its built-in Windows PowerShell; Linux/macOS require `pwsh` on `PATH`.
+
+The launch uses the verified fat JAR first on the classpath, followed by
+`src/main/resources` for local properties. It does not depend on VS Code's default
+released-SDK Maven profile or its compiler output. `.vscode/settings.json` disables
+the Java debugger's extra automatic build because the pre-launch task owns this build.
+SDK source paths are included for stepping into the pinned SDK with **F11**.
+
+**F5 starts real database operations after the build succeeds.** Use only your
+configured disposable test target. Let execution finish so `finally` can delete
+the test document; forcibly stopping the debugger can leave that document behind.
+Output appears in the integrated terminal. No live execution is part of adding
+these editor configurations.
+
 `ComplexPojoSample.java` configures one Jackson `ObjectMapper` at the top of the
 class: `JavaTimeModule` handles Java dates, ISO strings replace date timestamps,
 and untyped decimal values use `BigDecimal`. Null fields retain Jackson's default

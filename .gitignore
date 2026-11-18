@@ -15,7 +15,10 @@ dependency-reduced-pom.xml
 .settings/
 
 # VS Code
-.vscode/
+.vscode/*
+!.vscode/launch.json
+!.vscode/tasks.json
+!.vscode/settings.json
 
 # macOS
 .DS_Store
