@@ -120,16 +120,21 @@ public final class ComplexPojoSample {
             Order restored = MAPPER.convertValue(payload, Order.class);
             checkEquals("restored POJO", original, restored);
 
-            // At this SDK pin, update REPLACES the body, not individual fields.
-            // This deliberately small body must remove customer/items and the other omitted fields.
-            Map<String, Object> replacement = Map.of("orderId", original.orderId(),
-                    "runId", runId, "revision", 2, "status", "PAID");
-            client.update(address, key, replacement);
+            // Order is an immutable record: copy the restored values, changing only status/revision.
+            // update replaces the full document, so map the complete Order rather than a partial body.
+            Order updated = new Order(restored.orderId(), restored.runId(), 2, Order.Status.PAID,
+                    restored.customer(), restored.items(), restored.labels(), restored.optionalFields(),
+                    restored.placedAt(), restored.deliveryDate(), restored.note(),
+                    restored.sequence(), restored.externalNumber(), restored.total());
+            Map<String, Object> updatedDocument = MAPPER.convertValue(updated, MAP_TYPE);
+            client.update(address, key, updatedDocument);
 
             Map<String, Object> afterUpdate = awaitRead(client, address, key, 2);
-            checkEquals("update replaces the body", replacement, payload(afterUpdate));
+            checkEquals("update vs modified POJO", updatedDocument, payload(afterUpdate));
+            Order restoredUpdate = MAPPER.convertValue(payload(afterUpdate), Order.class);
+            checkEquals("restored updated POJO", updated, restoredUpdate);
 
-            // Put the full POJO back with upsert. Revision 3 distinguishes it from earlier writes.
+            // Demonstrate upsert with a fresh order from the JSON input (status NEW, revision 3).
             Order fullOrder = createOrder(runId, 3);
             Map<String, Object> fullDocument = MAPPER.convertValue(fullOrder, MAP_TYPE);
             client.upsert(address, key, fullDocument);

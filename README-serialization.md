@@ -348,10 +348,12 @@ The sample calls the public SDK:
 It compares reads, queries and restored POJOs to the corresponding original inputs.
 Successful checks print `PASS`; document values are included only in mismatch errors.
 
-The deliberate small `update` body contains only order ID, run ID, revision and
-status. **Current Cosmos/Dynamo update replaces the entire document**, so the
-sample verifies the customer, items, and other omitted fields disappear. It does
-not pretend this is a patch; the following full-POJO upsert restores them.
+The sample copies the restored `Order`, changes its status to `PAID` and revision
+to `2`, then converts that complete POJO to a Map for `update()`. `Order` is an
+immutable record, so this uses a new instance rather than setters.
+**Current Cosmos/Dynamo update replaces the entire document**, not selected fields;
+the readback verifies that all other fields are preserved. The following upsert
+demonstrates writing a fresh order from the JSON input (`NEW`, revision `3`).
 Known root provider fields (`id`, keys, Cosmos metadata) are excluded from
 POJO comparison; unexpected application fields still fail.
 
