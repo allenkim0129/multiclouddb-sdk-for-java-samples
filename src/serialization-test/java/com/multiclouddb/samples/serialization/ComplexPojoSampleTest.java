@@ -95,7 +95,7 @@ class ComplexPojoSampleTest {
     }
 
     @Test
-    void customerWorkflowUpdatesRestoredOrderAndDeletesOnlyCreatedKey() throws Exception {
+    void customerWorkflowUpdatesPojoThenMapAndDeletesOnlyCreatedKey() throws Exception {
         List<String> operations = new ArrayList<>();
         Map<MulticloudDbKey, Map<String, Object>> store = new HashMap<>();
         MulticloudDbKey unrelated = MulticloudDbKey.of("unrelated", "do-not-touch");
@@ -120,13 +120,19 @@ class ComplexPojoSampleTest {
                     Map<String, Object> document = MAPPER.convertValue(args[2], MAP_TYPE);
                     if (method.equals("update")) {
                         Map<String, Object> expectedUpdate = payload(store.get(key));
-                        expectedUpdate.put("status", "PAID");
-                        expectedUpdate.put("revision", 2);
+                        int nextRevision = ((Number) expectedUpdate.get("revision")).intValue() + 1;
+                        if (nextRevision == 2) {
+                            expectedUpdate.put("status", "PAID");
+                        } else {
+                            assertEquals(3, nextRevision);
+                            expectedUpdate.put("note", "Updated directly in the Map");
+                        }
+                        expectedUpdate.put("revision", nextRevision);
                         assertTrue(documentsEqual(expectedUpdate, document),
-                                "Update must preserve every restored field except status and revision");
+                                "Both update styles must preserve every unedited field");
                         Order updated = MAPPER.convertValue(document, Order.class);
                         assertEquals(Order.Status.PAID, updated.status());
-                        assertEquals(2, updated.revision());
+                        assertEquals(nextRevision, updated.revision());
                     }
                     document.put("partitionKey", key.partitionKey());
                     document.put("sortKey", key.sortKey());
@@ -156,7 +162,7 @@ class ComplexPojoSampleTest {
         assertFalse(lines.isEmpty());
         assertTrue(lines.stream().allMatch(line -> line.startsWith("PASS ")), lines.toString());
         assertEquals(List.of("create", "read",
-                "update", "read", "upsert", "query", "delete"), operations);
+                "update", "read", "update", "read", "upsert", "query", "delete"), operations);
         assertEquals(Map.of(unrelated, Map.of("business", "untouched")), store);
     }
 
@@ -194,7 +200,7 @@ class ComplexPojoSampleTest {
                 return new QueryPage(List.of(), "next");
             }
             assertEquals("next", request.continuationToken());
-            return new QueryPage(List.of(Map.of("id", "case", "revision", 3, "runId", "own-run")), null);
+            return new QueryPage(List.of(Map.of("id", "case", "revision", 4, "runId", "own-run")), null);
         });
         assertEquals(1, ComplexPojoSample.awaitQuery(client,
                 new ResourceAddress("db", "orders"), "own-run").size());

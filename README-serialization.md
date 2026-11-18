@@ -23,7 +23,7 @@ The `public static void main(String[] args)` method is in
 Short walkthrough: configure your live test target, follow one original order into
 `MAPPER.convertValue`, and compare its returned Map and restored POJO to the
 original input. Follow `exercise` from top to bottom:
-`create`, `read`/restore, replacement `update`, full `upsert`,
+`create`, `read`/restore, POJO-based `update`, direct Map `update`, full `upsert`,
 partition-scoped `query`/restore, and owned-key cleanup.
 There are no deliberate error probes, metadata demonstrations or separate helper classes.
 `run` names the command argument `provider`; input creation, required-property checks
@@ -344,7 +344,7 @@ environment.
 ## Read results and clean up
 
 The sample calls the public SDK:
-**create -> read -> update -> read -> upsert -> query -> delete**.
+**create -> read -> POJO update -> read -> Map update -> read -> upsert -> query -> delete**.
 It compares reads, queries and restored POJOs to the corresponding original inputs.
 Successful checks print `PASS`; document values are included only in mismatch errors.
 
@@ -352,8 +352,13 @@ The sample copies the restored `Order`, changes its status to `PAID` and revisio
 to `2`, then converts that complete POJO to a Map for `update()`. `Order` is an
 immutable record, so this uses a new instance rather than setters.
 **Current Cosmos/Dynamo update replaces the entire document**, not selected fields;
-the readback verifies that all other fields are preserved. The following upsert
-demonstrates writing a fresh order from the JSON input (`NEW`, revision `3`).
+the readback verifies that all other fields are preserved.
+
+The second update edits the returned Map directly, without restoring a POJO:
+`payload(afterUpdate)` copies the application fields into a mutable Map without
+provider metadata, then `put` changes `note` and revision to `3` before `update()`.
+Both approaches send the complete document and preserve unedited fields.
+The following upsert writes a fresh order from the JSON input (`NEW`, revision `4`).
 Known root provider fields (`id`, keys, Cosmos metadata) are excluded from
 POJO comparison; unexpected application fields still fail.
 

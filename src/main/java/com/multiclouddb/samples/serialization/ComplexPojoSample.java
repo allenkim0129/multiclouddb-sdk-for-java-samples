@@ -134,8 +134,18 @@ public final class ComplexPojoSample {
             Order restoredUpdate = MAPPER.convertValue(payload(afterUpdate), Order.class);
             checkEquals("restored updated POJO", updated, restoredUpdate);
 
-            // Demonstrate upsert with a fresh order from the JSON input (status NEW, revision 3).
-            Order fullOrder = createOrder(runId, 3);
+            // Alternatively, edit the returned Map without converting it to a POJO.
+            // payload makes a mutable copy without provider metadata; all business fields remain.
+            Map<String, Object> editedMap = payload(afterUpdate);
+            editedMap.put("note", "Updated directly in the Map");
+            editedMap.put("revision", 3);
+            client.update(address, key, editedMap);
+
+            Map<String, Object> afterMapUpdate = awaitRead(client, address, key, 3);
+            checkEquals("update vs edited Map", editedMap, payload(afterMapUpdate));
+
+            // Demonstrate upsert with a fresh order from the JSON input (status NEW, revision 4).
+            Order fullOrder = createOrder(runId, 4);
             Map<String, Object> fullDocument = MAPPER.convertValue(fullOrder, MAP_TYPE);
             client.upsert(address, key, fullDocument);
 
@@ -244,7 +254,7 @@ public final class ComplexPojoSample {
                 check(++pages < 10 || token == null, "Query page budget exceeded");
             } while (token != null);
 
-            if (!rows.isEmpty() && rows.stream().allMatch(row -> documentsEqual(3, row.get("revision")))) {
+            if (!rows.isEmpty() && rows.stream().allMatch(row -> documentsEqual(4, row.get("revision")))) {
                 return rows;
             }
             Thread.sleep(250);
