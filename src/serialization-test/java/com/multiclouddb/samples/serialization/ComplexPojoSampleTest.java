@@ -151,7 +151,10 @@ class ComplexPojoSampleTest {
                 }
                 return null;
             });
-            new ComplexPojoSample().exercise(client, new ResourceAddress("db", "orders"), "own-run");
+            IllegalStateException failure = assertThrows(IllegalStateException.class, () ->
+                    new ComplexPojoSample().exercise(client, new ResourceAddress("db", "orders"), "own-run"));
+            assertEquals(createSucceeds ? "Simulated read failure" : "Simulated unconfirmed write",
+                    failure.getMessage());
             assertEquals(createSucceeds ? List.of("create", "read", "delete", "read") : List.of("create"), operations);
         }
     }
@@ -182,7 +185,7 @@ class ComplexPojoSampleTest {
             calls.incrementAndGet();
             return new QueryPage(List.of(), "endless");
         });
-        assertThrows(IllegalStateException.class, () -> ComplexPojoSample.awaitQuery(client,
+        assertThrows(AssertionError.class, () -> ComplexPojoSample.awaitQuery(client,
                 new ResourceAddress("db", "orders"), "own-run", "case"));
         assertEquals(10, calls.get());
     }
@@ -201,6 +204,73 @@ class ComplexPojoSampleTest {
         assertSame(denied, assertThrows(MulticloudDbException.class, () ->
                 new ComplexPojoSample().demonstrateFailureHandling(client, new ResourceAddress("db", "orders"),
                         MulticloudDbKey.of("own-run", "baseline"), Map.of("runId", "own-run"))));
+        assertEquals(List.of("read", "create"), operations);
+    }
+
+    @Test
+    void comparisonFailureStopsBeforeUpdateAndStillDeletesOwnedDocument() throws Exception {
+        List<String> operations = new ArrayList<>();
+        Map<String, Object> returned = ExpectedDocuments.load("own-run", 1);
+        returned.put("note", "unexpected");
+        AtomicInteger creates = new AtomicInteger();
+        AtomicInteger reads = new AtomicInteger();
+        var client = fake((method, args) -> {
+            operations.add(method);
+            return switch (method) {
+                case "create" -> {
+                    switch (creates.incrementAndGet()) {
+                        case 2 -> throw failure(MulticloudDbErrorCategory.CONFLICT, 409);
+                        case 3 -> throw failure(MulticloudDbErrorCategory.INVALID_REQUEST, null);
+                        default -> { }
+                    }
+                    yield null;
+                }
+                case "read" -> reads.incrementAndGet() == 2 ? new DocumentResult(returned) : null;
+                case "delete" -> null;
+                default -> throw new AssertionError("Must not continue to " + method);
+            };
+        });
+
+        AssertionError error = assertThrows(AssertionError.class, () ->
+                new ComplexPojoSample().exercise(client, new ResourceAddress("db", "orders"), "own-run"));
+        assertTrue(error.getMessage().contains("read vs independent expected"));
+        assertTrue(error.getMessage().contains("$.note"));
+        assertEquals(List.of("create", "read", "create", "create", "read", "delete", "read"), operations);
+    }
+
+    @Test
+    void cleanupFailureIsPreservedWithoutReplacingOriginalFailure() {
+        IllegalStateException readFailure = new IllegalStateException("read failed");
+        IllegalStateException deleteFailure = new IllegalStateException("delete failed");
+        List<String> operations = new ArrayList<>();
+        var client = fake((method, args) -> {
+            operations.add(method);
+            return switch (method) {
+                case "create" -> null;
+                case "read" -> throw readFailure;
+                case "delete" -> throw deleteFailure;
+                default -> throw new AssertionError("Unexpected call " + method);
+            };
+        });
+
+        var thrown = assertThrows(IllegalStateException.class, () ->
+                new ComplexPojoSample().exercise(client, new ResourceAddress("db", "orders"), "own-run"));
+        assertSame(readFailure, thrown);
+        assertArrayEquals(new Throwable[]{deleteFailure}, thrown.getSuppressed());
+        assertEquals(List.of("create", "read", "delete"), operations);
+    }
+
+    @Test
+    void unexpectedSuccessInFailureProbeThrowsImmediately() {
+        List<String> operations = new ArrayList<>();
+        var client = fake((method, args) -> {
+            operations.add(method);
+            return null;
+        });
+        AssertionError error = assertThrows(AssertionError.class, () ->
+                new ComplexPojoSample().demonstrateFailureHandling(client, new ResourceAddress("db", "orders"),
+                        MulticloudDbKey.of("own-run", "baseline"), Map.of("runId", "own-run")));
+        assertEquals("Duplicate create unexpectedly succeeded", error.getMessage());
         assertEquals(List.of("read", "create"), operations);
     }
 

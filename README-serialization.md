@@ -30,6 +30,12 @@ and owned-key cleanup. `errorSummary`/`diagnosticsSummary` are in that same file
 not hidden behind a client/error framework. `ExpectedDocuments` only supports
 comparison and display; it is not the application serializer.
 
+[`SampleChecks.java`](src/main/java/com/multiclouddb/samples/serialization/SampleChecks.java)
+contains the small fail-fast helpers: `checkArguments`, `checkRequiredProperties`,
+`checkEquals` and `check`. The main workflow calls these by name instead of embedding
+validation loops or maintaining a failure counter. Logical blocks are separated by
+blank lines so setup, mapping, each SDK operation and restoration can be read independently.
+
 The intent is a small review surface for the team's typical application workflow,
 not a claim that review is complete, the API is approved for customer delivery,
 or three-year compatibility has been proven. PR merge/release and human review
@@ -359,14 +365,19 @@ excluded from POJO comparison; unexpected application fields still fail.
 Reads retry only missing/stale revision visibility, at most five attempts with
 250 ms intervals. Query follows continuation tokens, at most ten pages per attempt
 and five attempts. Value differences are **not retried away or excused**.
-Native conversion failures remain FAIL results, and cleanup is still attempted for a confirmed create.
+An unexpected operation error or failed comparison throws immediately.
+There is no failure accumulation or continuation after a mismatch.
+Cleanup is still attempted for a confirmed create.
 
 Exit **0** means all executed checks passed. Exit **1** means at least one operation,
-comparison, or cleanup failed. A conversion/read exception stops the workflow's later
+comparison, or cleanup failed. An exception or assertion failure stops the workflow's later
 steps, so do not infer those steps ran from the overall command completing.
 
-After each **confirmed successful create**, `finally` deletes only its exact
-partitionKey + sortKey/id and checks for absence. A conflict or otherwise
+After **confirmed successful create**, a `try-with-resources` cleanup action deletes
+only its exact partitionKey + sortKey/id and checks for absence, on success or failure.
+If cleanup also fails, Java keeps the original exception and adds the cleanup error
+as a suppressed exception. The client is closed by a separate `try-with-resources`.
+A conflict or otherwise
 unconfirmed create is never blindly deleted. Ambiguous writes, failed cleanup,
 Ctrl+C, process termination, or machine loss can leave data. Save the printed
 run ID and exact candidate key: `jackson-baseline`.
@@ -384,7 +395,7 @@ as a proposed API:
 | Missing point read | Branch on `client.read(...) == null`; choose the application's not-found response | No exception and no `DocumentResult`; no status or request ID is invented |
 | Duplicate `create` of this run's confirmed key | Catch `MulticloudDbException`, branch on `error().category() == CONFLICT`, keep the existing document | `error().provider()`, `operation()`, raw nullable `statusCode()`, `retryable()` hint; optional `diagnostics()` |
 | Unsupported `Instant` left directly in a Map | Catch `INVALID_REQUEST`; fix customer mapping before retrying | Client-side validation can have no provider status/request ID. This is deliberately not the configured ISO-string path |
-| Any other SDK error during an expected-error probe | Rethrow; the case records FAIL and still attempts owned-key cleanup | Authentication/throttling/etc. must not be reported as a successful conflict/validation test |
+| Any other SDK error during an expected-error probe | Rethrow immediately; owned-key cleanup is still attempted | Authentication/throttling/etc. must not be reported as a successful conflict/validation test |
 | Successful query | Inspect `QueryPage.diagnostics()` if non-null | Provider, operation, duration, optional request ID/status, item count; unavailable fields remain unavailable |
 | Successful point read | Opt in with `OperationOptions.builder().includeMetadata(true)` | `DocumentResult.metadata()` is **write metadata**, not operation diagnostics: optional last-modified/TTL/version; no point-read request-ID getter is fabricated |
 
@@ -404,6 +415,13 @@ the intentional synthetic input/result display, not error diagnostics.
 There is **no direct native exception dependency** in the POJO error-handling
 example. Additional provider-detail keys are opaque and need a separate redaction
 policy if an application chooses to use them.
+
+Only `main` translates unexpected failures into a sanitized exception for console
+output; native messages, causes and suppressed exception text are not attached.
+Sample assertion messages retain their comparison/property details, and additional
+cleanup/client-close failures are reported by count. The workflow itself propagates
+errors directly. Expected CONFLICT/INVALID_REQUEST catches remain solely for the
+two deliberate failure examples, not as general error wrappers.
 
 Successful create/update/upsert/delete return `void`; this sample cannot extract
 a success request ID from them. Missing diagnostics is displayed, never filled
@@ -540,7 +558,7 @@ in orchestration unit tests use an explicitly labeled in-memory test double:
 **they do not validate native mapping or live storage**. A separate offline cursor
 round-trip checks the directly required migration of existing change-feed samples.
 
-Observed offline results: twenty-two JUnit tests
+Observed offline results: twenty-five JUnit tests
 passed on JDK 17; the original released-SDK profile also compiled. The PowerShell
 script was executed end to end using PowerShell on Linux, including the installed/
 resolved artifact hash checks. Native Windows execution has not been performed.

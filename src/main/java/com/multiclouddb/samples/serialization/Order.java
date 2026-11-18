@@ -23,7 +23,10 @@ public record Order(
         Instant placedAt, LocalDate deliveryDate, String note,
         long sequence, BigInteger externalNumber, BigDecimal total) {
     public enum Status { NEW, PAID }
+
     public record Customer(String name, Address address) { }
+
     public record Address(String city, String postalCode) { }
+
     public record LineItem(String sku, int quantity, BigDecimal unitPrice, List<String> tags) { }
 }

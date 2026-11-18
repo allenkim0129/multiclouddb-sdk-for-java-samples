@@ -36,7 +36,7 @@ class ComplexPojoConfigTest {
                 List.of("cosmos", "--allow-live"), List.of("dynamo", "--unknown"),
                 List.of("live", "cosmos"))) {
             String output = rejected(args, Map.of());
-            assertEquals("FAIL configuration: Usage: <cosmos|dynamo>", output.trim());
+            assertTrue(output.contains("IllegalStateException: FAIL Usage: <cosmos|dynamo>"), output);
         }
     }
 

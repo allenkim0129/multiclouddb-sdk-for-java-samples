@@ -24,8 +24,10 @@ final class ExpectedDocuments {
             if (input == null) {
                 throw new IOException("Missing expected fixture: baseline.json");
             }
+
             Map<String, Object> expected = ComplexPojoSample.MAPPER
                     .readValue(input, ComplexPojoSample.MAP_TYPE);
+
             // Only execution-specific fields vary; business values stay independent of the
             // outgoing Map so a mapping error cannot silently redefine the expected result.
             expected.put("runId", runId);
@@ -55,6 +57,7 @@ final class ExpectedDocuments {
             if (!left.keySet().equals(right.keySet())) {
                 errors.add(path + " keys expected=" + left.keySet() + " actual=" + right.keySet());
             }
+
             left.forEach((key, value) -> {
                 if (right.containsKey(key)) {
                     compare(path + "." + key, value, right.get(key), errors);
@@ -64,6 +67,7 @@ final class ExpectedDocuments {
             if (left.size() != right.size()) {
                 errors.add(path + " list size expected=" + left.size() + " actual=" + right.size());
             }
+
             for (int i = 0; i < Math.min(left.size(), right.size()); i++) {
                 compare(path + "[" + i + "]", left.get(i), right.get(i), errors);
             }

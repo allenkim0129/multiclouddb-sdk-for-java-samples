@@ -23,9 +23,11 @@ public final class OrderFixtures {
         long sequence = 12345L;
         BigDecimal total = new BigDecimal("125.50");
         BigInteger externalNumber = new BigInteger("42");
+
         // Map.of rejects null values; this map intentionally tests an explicit JSON null.
         Map<String, Object> optionalFields = new LinkedHashMap<>();
         optionalFields.put("giftMessage", null);
+
         // "coupon" is deliberately absent; null and missing are checked separately.
         // The leading-zero postal code is text, tags include both populated and empty lists,
         // and dates exercise Instant plus LocalDate. All values are synthetic and editable here.
