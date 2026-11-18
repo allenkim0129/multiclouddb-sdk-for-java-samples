@@ -43,6 +43,7 @@ class ComplexPojoConfigTest {
     @Test
     void missingResourceDoesNotUseLegacyEnvironmentTargets() throws Exception {
         String output = rejected(List.of("cosmos"), Map.of());
+        assertTrue(output.contains("\u2014 using system properties only"), output);
         assertTrue(output.contains("Missing required property: multiclouddb.provider"), output);
     }
 
@@ -98,6 +99,8 @@ class ComplexPojoConfigTest {
         String executable = System.getProperty("os.name").startsWith("Windows") ? "java.exe" : "java";
         List<String> command = new ArrayList<>();
         command.add(Path.of(System.getProperty("java.home"), "bin", executable).toString());
+        // Match Files.readString below, including on Windows JDK 17 with a non-UTF-8 default.
+        command.add("-Dfile.encoding=UTF-8");
         overrides.forEach((key, value) -> command.add("-D" + key + "=" + value));
         command.add("-cp");
         command.add(System.getProperty("surefire.test.class.path", System.getProperty("java.class.path"))
