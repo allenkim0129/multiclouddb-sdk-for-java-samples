@@ -16,10 +16,26 @@ function Invoke-Checked {
     if ($LASTEXITCODE -ne 0) { throw "$Program failed with exit code $LASTEXITCODE" }
 }
 
+function Get-Sha256 {
+    param([string]$Path)
+    # Use .NET directly so verification does not depend on PowerShell utility cmdlets.
+    $sha256 = [System.Security.Cryptography.SHA256]::Create()
+    try {
+        $stream = [System.IO.File]::OpenRead($Path)
+        try {
+            return [System.BitConverter]::ToString($sha256.ComputeHash($stream)).Replace('-', '')
+        } finally {
+            $stream.Dispose()
+        }
+    } finally {
+        $sha256.Dispose()
+    }
+}
+
 function Assert-SameHash {
     param([string]$Built, [string]$Resolved)
-    $builtHash = (Get-FileHash -Algorithm SHA256 $Built).Hash
-    $resolvedHash = (Get-FileHash -Algorithm SHA256 $Resolved).Hash
+    $builtHash = Get-Sha256 $Built
+    $resolvedHash = Get-Sha256 $Resolved
     if ($builtHash -ne $resolvedHash) { throw "Artifact mismatch: $Resolved" }
     return $resolvedHash
 }

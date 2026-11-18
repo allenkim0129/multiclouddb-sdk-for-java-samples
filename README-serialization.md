@@ -99,6 +99,10 @@ JARs, plus installed flattened POMs. Evidence is written to
 sample runtime classpath. Merely selecting a SNAPSHOT version without this preparation
 does **not** establish provenance.
 
+Hash verification uses .NET SHA-256 directly; the `Get-FileHash` PowerShell cmdlet
+is not required. A Maven `BUILD SUCCESS` is not the final result: the script must
+also complete its artifact verification and print `Built and checked offline`.
+
 The profile aligns Cosmos to the PR's **4.82.0** (rather than the sample default
 4.81.0), keeps AWS **2.34.0**, and aligns Jackson components using the **2.18.9 BOM**
 to match the pinned SDK's Azure dependencies rather than downgrading them to the
