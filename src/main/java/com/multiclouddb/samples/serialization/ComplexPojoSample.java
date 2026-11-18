@@ -82,25 +82,29 @@ public final class ComplexPojoSample {
         // Use the same properties loader as the other samples.
         ConfigLoader.AppConfig config = ConfigLoader.load("serialization-" + provider + "-cloud.properties");
         checkRequiredProperties(config, provider);
-        String database = config.property("multiclouddb.database");
+        String runSuffix = UUID.randomUUID().toString();
+        String database = config.property("multiclouddb.database") + "-pojo-" + runSuffix;
         String collection = config.property("multiclouddb.collection");
-        String runId = config.property("multiclouddb.runPrefix") + "-" + UUID.randomUUID();
+        String runId = config.property("multiclouddb.runPrefix") + "-" + runSuffix;
         ResourceAddress address = new ResourceAddress(database, collection);
 
+        // Keep the exact resource names visible even if provisioning is interrupted.
+        System.out.println("RESOURCE database=" + database + " collection=" + collection);
         try (MulticloudDbClient client = MulticloudDbClientFactory.create(config.sdk())) {
             exercise(client, address, runId);
         } catch (Exception | AssertionError failure) {
-            // Report only the exact candidate keys on failure, never account credentials.
-            System.err.println("Inspect this run's documents if writes were attempted: "
+            // Report the generated resource names, never account credentials.
+            System.err.println("Inspect this run's database=" + database + " collection=" + collection);
+            System.err.println("Document keys if writes were attempted: "
                     + runId + "/jackson-baseline, " + runId + "/jackson-paid");
             throw failure;
         }
 
-        System.out.println("PASS: all checks and cleanup completed");
+        System.out.println("PASS: all checks and document cleanup completed; resource cleanup is a separate script");
     }
 
     void exercise(MulticloudDbClient client, ResourceAddress address, String runId) throws Exception {
-        // Prepare the configured test resources. Existing resources are reused, not dropped.
+        // run() appends a UUID to the configured database prefix to isolate these test resources.
         // Dynamo has no database resource: the database name is part of the physical table name.
         client.ensureDatabase(address.database());
         client.ensureContainer(address);

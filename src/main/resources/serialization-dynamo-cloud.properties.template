@@ -1,12 +1,14 @@
 # Complex POJO Serialization sample: DynamoDB test resources.
-# The live sample creates the table if missing (on-demand billing); it remains after the run.
+# The live sample creates a unique table per run (on-demand billing).
+# Delete it afterward with scripts/cleanup-serialization-sample.ps1.
 # Copy to serialization-dynamo-cloud.properties and fill in the region and target.
 # The filled file is gitignored and excluded from Maven resources/JARs.
 # Use the AWS default credential chain; never commit or package credentials.
 # Windows: java -cp "$jar;src/main/resources" $main dynamo
-# Physical table: <database>__<collection>, String partitionKey + String sortKey.
+# Physical table: <database>-pojo-<UUID>__<collection>, String partitionKey + String sortKey.
 multiclouddb.provider=dynamo
 multiclouddb.connection.region=
+# Database prefix, not an existing table to reuse.
 multiclouddb.database=
 multiclouddb.collection=
 multiclouddb.runPrefix=pojo-test

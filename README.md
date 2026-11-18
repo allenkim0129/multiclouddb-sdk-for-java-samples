@@ -47,6 +47,9 @@ configs. It uses the shared `ConfigLoader`; add the resources directory after th
 JAR on the runtime classpath (`"$jar;src/main/resources"` on Windows). The filled
 serialization configs remain **gitignored and excluded from both builds' JARs**.
 See [Cosmos setup](README-serialization.md#cosmos-live-powershell).
+Each POJO run creates a dedicated database/table using a UUID suffix. After the run,
+use the [separate cleanup script](README-serialization.md#delete-this-runs-resources-separate-script)
+to remove that exact resource; exiting the app deletes documents, not the database/table.
 
 ---
 

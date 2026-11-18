@@ -6,8 +6,9 @@ It does not change the SDK, promise a new numeric contract, or implement partial
 Only synthetic orders are used. **The app is live-only and requires an explicit
 provider and configured test target. Running it performs real database operations
 without an additional confirmation flag. Building does not run the live app.**
-Startup creates missing database/container/table resources in the configured account.
-Those resources remain after the sample removes its test documents.
+Startup creates a unique per-run database/container or table in the configured account.
+The Java sample removes its test documents; resource deletion is a **separate, manually
+invoked script**, not automatic on app/debugger exit. See [resource cleanup](#delete-this-runs-resources-separate-script).
 
 **App name:** Complex POJO Serialization. **Main class:**
 [`com.multiclouddb.samples.serialization.ComplexPojoSample`](src/main/java/com/multiclouddb/samples/serialization/ComplexPojoSample.java).
@@ -151,8 +152,9 @@ java -cp $cp $main cosmos
 $LASTEXITCODE
 ```
 
-The app prints test `PASS` statements, per-page query diagnostics and errors. It does not dump POJOs,
-Maps, runtime types or startup details. Inputs remain visible and editable in
+The app prints the generated `RESOURCE database=... collection=...` names before connecting,
+test `PASS` statements, per-page query diagnostics and errors. It does not dump POJOs,
+Maps or runtime types. Inputs remain visible and editable in
 `Order.java` and the `ORDER_JSON` text block in `ComplexPojoSample.java`.
 There is no preview mode. Missing arguments fail with usage instead of connecting.
 The build's offline unit tests remain separate from this live workflow.
@@ -196,7 +198,8 @@ use the named launch configurations above after rebuilding.
 
 **F5 starts real resource provisioning and database operations after the build succeeds.** Use only your
 configured disposable test target. Let execution finish so `finally` can delete
-the test document; forcibly stopping the debugger can leave that document behind.
+the test documents; forcibly stopping the debugger can leave those documents behind.
+The generated database/table remains until you run the separate cleanup script below.
 Output appears in the integrated terminal. No live execution is part of adding
 these editor configurations.
 
@@ -222,25 +225,31 @@ does not guarantee decimal scale preservation. Missing keys differ from explicit
 
 ## Live prerequisites and safety
 
-**You choose the account and test resource names in properties.** Startup calls
+**You choose the account, database prefix and collection name in properties.**
+The configured database name is now a **prefix**, never the actual target:
+each run uses `<configured-database>-pojo-<UUID>`. The same UUID makes its document
+partition unique. Cosmos gets a dedicated database containing the configured container;
+Dynamo gets the physical table `<configured-database>-pojo-<UUID>__<collection>`.
+The original configured database/table is not touched. Startup calls
 `client.ensureDatabase(address.database())` followed by `client.ensureContainer(address)`.
 Cosmos creates missing databases/containers; DynamoDB's database call is a no-op,
 and its container call creates `<database>__<collection>` with on-demand billing
-and waits for the table to become active. Existing resources are reused; the sample
-does not migrate incompatible keys or drop resources.
+and waits for the table to become active. The SDK's ensure calls remain idempotent;
+UUID naming provides isolation, not a create-only ownership guarantee.
 
-Use disposable test targets, not production data. **Cleanup deletes only this run's
-documents, never a database, container or table**, including resources created during
-initialization. Resources can remain even if initialization or a later step fails.
-Review and remove them separately when no longer needed. Provisioning can incur
+Use disposable test accounts, not production data. **Java cleanup deletes only this run's
+documents.** Resources remain even after a successful run or failed initialization.
+The separate cleanup script deletes exactly one generated database/table after showing
+its full resource ID and requiring confirmation; it never lists or deletes by prefix.
+Never put unrelated data in these disposable resources. Provisioning can incur
 ongoing resource charges; live calls also cost RU/request capacity and require networking/firewall
 access. There is no unlimited polling or unscoped table scan, but SDK retries and
 network timeouts can add latency/requests; this is not a hard monetary/time budget.
 
-| Provider | Created schema / required schema if reusing resources | Permissions |
+| Provider | Created schema | Java sample permissions |
 | --- | --- | --- |
 | Cosmos DB for NoSQL | Database + container, partition key path **`/partitionKey`**, normal `id` | Account key authorized for database/container creation and item CRUD/query; account metadata-write restrictions must permit provisioning |
-| DynamoDB | Physical table **`<database>__<collection>`**, String hash key **`partitionKey`**, String range key **`sortKey`**, `PAY_PER_REQUEST` for new tables | `dynamodb:DescribeTable`, `CreateTable`, `PutItem`, `GetItem`, `DeleteItem`, and query permissions (`PartiQLSelect` for the translated query path); no DeleteTable needed |
+| DynamoDB | Physical table **`<generated-database>__<collection>`**, String hash key **`partitionKey`**, String range key **`sortKey`**, `PAY_PER_REQUEST` | `dynamodb:DescribeTable`, `CreateTable`, `PutItem`, `GetItem`, `DeleteItem`, and query permissions (`PartiQLSelect` for the translated query path) |
 
 Initialization errors propagate immediately, before document writes. Resource creation
 uses the pinned SDK's provider defaults; it does not create cloud accounts or configure
@@ -261,7 +270,10 @@ could expose credentials. Diagnose access errors privately in your cloud tooling
 
 The sample checks for missing required properties and a provider/argument mismatch.
 It does not impose its own name lengths, character restrictions, endpoint syntax or
-region format rules; the SDK/provider validates those. A fresh UUID is appended to
+region format rules; the SDK/provider validates those. Choose short database prefixes
+and collection names using letters, digits, dot, underscore or hyphen so the cleanup
+script can accept them. Allow space in provider name limits for `-pojo-` plus the
+36-character UUID (and `__<collection>` for Dynamo). A fresh UUID is also appended to
 `multiclouddb.runPrefix` on every run; queries are partition-scoped to that unique run.
 
 ## Cosmos live (PowerShell)
@@ -272,7 +284,7 @@ To configure the target interactively, run in your current PowerShell terminal:
 .\scripts\configure-cosmos-sample.ps1
 ```
 
-It asks for endpoint, database, container, and a **hidden primary key**, with no
+It asks for endpoint, database prefix, container, and a **hidden primary key**, with no
 authentication selection menu. It writes:
 
 ```text
@@ -287,7 +299,7 @@ shows the expected fields; you can also copy and fill it in locally:
 multiclouddb.provider=cosmos
 multiclouddb.connection.endpoint=https://YOUR-ACCOUNT.documents.azure.com/
 multiclouddb.connection.key=YOUR-PRIMARY-KEY
-multiclouddb.database=YOUR-DATABASE
+multiclouddb.database=your-test-db
 multiclouddb.collection=YOUR-CONTAINER
 multiclouddb.runPrefix=pojo-test
 ```
@@ -358,7 +370,7 @@ the primary key stored in either local config file.
 
 Copy the [Dynamo template](src/main/resources/serialization-dynamo-cloud.properties.template)
 to `src/main/resources/serialization-dynamo-cloud.properties` and fill in the
-region, database, collection and run prefix:
+region, database prefix, collection and run prefix:
 
 ```powershell
 Copy-Item src/main/resources/serialization-dynamo-cloud.properties.template `
@@ -391,7 +403,7 @@ $env:AWS_ACCESS_KEY_ID = $session.AccessKeyId
 $env:AWS_SECRET_ACCESS_KEY = $session.SecretAccessKey
 $env:AWS_SESSION_TOKEN = $session.SessionToken
 $session = $null
-# Physical table (created if missing): your-test-db__your-test-orders
+# Physical table for this run: your-test-db-pojo-<UUID>__your-test-orders
 try {
     java -cp $cp $main dynamo
     $result = $LASTEXITCODE
@@ -467,12 +479,66 @@ exception under normal Java `finally` semantics. The client is still closed by
 A conflict or otherwise
 unconfirmed create is never blindly deleted. Ambiguous writes, failed cleanup,
 Ctrl+C, process termination, or machine loss can leave data. On a caught workflow
-failure, the error output includes the run's partition key and document keys
+failure, the error output includes the generated database/collection, partition key and document keys
 `jackson-baseline` and `jackson-paid`. In the portal/your own tooling inspect only
 those exact keys and delete documents you confirm belong to that run. If abrupt termination prevents
 that error output, establish ownership from the document's run ID and synthetic
-contents before deleting anything. Never delete all
-documents by a shared prefix, the container, database, or table as cleanup.
+contents before deleting anything. Do not delete shared resources or delete by prefix.
+The separate script below can remove the entire disposable resource, including leftover
+documents, once you confirm it belongs to that run.
+
+### Delete this run's resources (separate script)
+
+The pinned public SDK has no database/container deletion API. Instead of adding native
+SDK calls to the Java walkthrough, use
+[`scripts/cleanup-serialization-sample.ps1`](scripts/cleanup-serialization-sample.ps1)
+after the run. This is **manual**, including after F5. It does not read or print your
+properties file or primary key.
+
+Copy the **full generated database name**, including `-pojo-<UUID>`, from the
+`RESOURCE` output (not the prefix in properties). Each invocation deletes only one
+exact resource. The script refuses bare prefixes and wildcards. It displays the
+Azure resource ID or Dynamo table ARN so you can verify the account and target, then
+requires typing `DELETE <exact-database-or-table-name>`. A name pattern is not proof
+of ownership: stop if the displayed resource is not this run's disposable target.
+
+For Cosmos, install Azure CLI and sign in to the subscription containing the account.
+The Java primary key is **not** used by the cleanup script. Your Azure identity needs
+permission to read and delete SQL databases in that account.
+
+```powershell
+az login
+if ($LASTEXITCODE -ne 0) { throw 'Azure login failed' }
+$database = 'COPY-FULL-GENERATED-DATABASE-NAME-FROM-RESOURCE-OUTPUT'
+.\scripts\cleanup-serialization-sample.ps1 -Provider cosmos -Database $database `
+    -Subscription 'YOUR-SUBSCRIPTION-ID' -ResourceGroup 'YOUR-RESOURCE-GROUP' `
+    -CosmosAccount 'YOUR-ACCOUNT'
+```
+
+For Dynamo, install AWS CLI v2 and use the same test account/region as the Java run.
+There is no Dynamo database resource; only the exact `<generated-database>__<collection>`
+table is deleted. Cleanup needs `dynamodb:DescribeTable` and `dynamodb:DeleteTable`.
+An explicit `-Profile` works after the temporary environment credentials above have
+been cleared; omit it when intentionally using your current environment/role.
+
+```powershell
+$database = 'COPY-FULL-GENERATED-DATABASE-NAME-FROM-RESOURCE-OUTPUT'
+.\scripts\cleanup-serialization-sample.ps1 -Provider dynamo -Database $database `
+    -Collection 'your-test-orders' -Region 'us-east-1' -Profile 'YOUR-TEST-PROFILE'
+```
+
+Cosmos deletion includes all containers inside that generated database. Dynamo cleanup
+waits for that one table to disappear using the CLI's bounded waiter. Lookup, permission,
+deletion and waiter failures terminate the script; do not treat them as success.
+Interrupted or ambiguous provisioning can still leave resources. Inspect the printed
+target in the correct account before retrying cleanup. Previously created resources
+without the run suffix are deliberately not accepted by this script.
+
+Offline script checks use mocked commands and do not contact cloud accounts:
+
+```powershell
+.\scripts\tests\cleanup-serialization-sample.Tests.ps1
+```
 
 ## Failures
 
@@ -480,7 +546,7 @@ The workflow throws on an SDK error, mapping error or failed comparison.
 Only `main` replaces the failure with a sanitized exception for console output.
 For SDK failures it shows the category and nullable status code, not native
 messages, causes, provider details or diagnostics. Additional cleanup/client-close
-failures are reported by count; inspect only the printed document keys.
+failures are reported by count; inspect only the printed run-specific resource and document keys.
 
 Sample assertion messages include the expected/actual synthetic values or the
 missing property's name, never a configured credential. There is no failure counter,

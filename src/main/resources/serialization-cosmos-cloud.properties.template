@@ -1,5 +1,6 @@
 # Complex POJO Serialization sample: Cosmos DB test resources.
-# The live sample creates the database/container if missing; resources remain after the run.
+# The live sample creates <database>-pojo-<UUID> and its container for each run.
+# Delete the generated DB afterward with scripts/cleanup-serialization-sample.ps1.
 # Copy to serialization-cosmos-cloud.properties or run scripts/configure-cosmos-sample.ps1.
 # The filled file is gitignored and excluded from Maven resources/JARs.
 # It contains a plaintext secret. Never share, force-add, or commit it.
@@ -9,6 +10,7 @@
 multiclouddb.provider=cosmos
 multiclouddb.connection.endpoint=https://YOUR-ACCOUNT.documents.azure.com/
 multiclouddb.connection.key=
+# Database prefix, not an existing database to reuse.
 multiclouddb.database=
 multiclouddb.collection=
 multiclouddb.runPrefix=pojo-test

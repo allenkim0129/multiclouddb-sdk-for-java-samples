@@ -51,10 +51,10 @@ if ($Load) {
     }
     Assert-Settings $settings
 } else {
-    Write-Host 'Choose test resource names. The Java sample creates missing resources with partition key /partitionKey.'
+    Write-Host 'Choose a test database prefix. Each run creates a unique DB with suffix -pojo-<UUID>.'
     $settings = [pscustomobject]@{
         endpoint = (Read-Host 'Cosmos HTTPS endpoint').Trim()
-        database = (Read-Host 'Test database name').Trim()
+        database = (Read-Host 'Test database prefix').Trim()
         collection = (Read-Host 'Test container (collection) name').Trim()
         runPrefix = 'pojo-test'
     }
